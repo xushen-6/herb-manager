@@ -17,6 +17,10 @@ public final class DesktopSmoke {
         SwingUtilities.invokeAndWait(() -> { Theme.install(); new LoginFrame(platform,"界面检查数据库").setVisible(true); });
         Thread.sleep(700);
         capture(out.resolve("01-login.png"));
+        int windowsBefore=Window.getWindows().length;
+        click("login.register"); waitFor("register.submit");
+        if(Window.getWindows().length!=windowsBefore) throw new AssertionError("注册页面不应创建新窗口");
+        click("register.back"); waitFor("login.submit");
         SwingUtilities.invokeAndWait(() -> {
             ((JTextField)find("login.username")).setText("admin");
             ((JPasswordField)find("login.password")).setText("Admin123!");
