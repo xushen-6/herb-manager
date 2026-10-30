@@ -1,0 +1,41 @@
+package cn.herb.view;
+
+import cn.herb.controller.Tasks;
+import cn.herb.model.*;
+import cn.herb.service.Platform;
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.*;
+import java.math.BigDecimal;
+import java.util.*;
+
+public final class MedicinalPanel extends JPanel {
+    private final Platform platform;private final User user;
+    private final JTextField search=Theme.field(16);
+    private final JComboBox<String> category=new JComboBox<>();
+    private final JTable table=Theme.table("编号","药材名称","分类","产地","库存 / 克","单价 / 元","预警状态");
+    private final JLabel count=Theme.label("加载中…",12,Theme.MUTED);
+    private final JButton refresh=Theme.button("查询",true);
+    private java.util.List<Medicinal> records=new ArrayList<>();
+    private long queryGeneration;
+    public MedicinalPanel(Platform platform,User user){
+        super(new BorderLayout());this.platform=platform;this.user=user;JPanel page=Theme.page("药材管理","维护药材档案、跟踪库存。双击表格记录可查看完整详情。");add(page);
+        JPanel center=new JPanel(new BorderLayout(0,15));center.setOpaque(false);category.addItem("全部");for(String c:Platform.CATEGORIES)category.addItem(c);category.setPreferredSize(new Dimension(110,38));JButton reset=Theme.button("重置",false);JPanel filters=Theme.row(new JLabel("药材名称"),search,new JLabel("分类"),category,refresh,reset);center.add(filters,BorderLayout.NORTH);center.add(Theme.scroll(table));center.add(count,BorderLayout.SOUTH);page.add(center);
+        JPanel buttons=Theme.row();if(user.role().canEdit()){JButton add=Theme.button("新增药材",true),edit=Theme.button("编辑资料",false),remove=Theme.button("删除",false),in=Theme.button("入库",false),out=Theme.button("出库",false),warning=Theme.button("库存预警",false);buttons.add(add);buttons.add(edit);buttons.add(in);buttons.add(out);buttons.add(remove);buttons.add(warning);add.addActionListener(e -> editor(null));edit.addActionListener(e -> {Medicinal m=selected();if(m!=null)editor(m);});remove.addActionListener(e -> {Medicinal m=selected();if(m==null || !Theme.confirm(this,"确定删除药材“"+m.name()+"”？此操作将删除药材档案。"))return;Tasks.run(this,remove,() -> {platform.deleteMedicinal(user,m.id());return true;},ok -> load(false));});in.addActionListener(e -> stock(true,in));out.addActionListener(e -> stock(false,out));warning.addActionListener(e -> load(true));}
+        JButton details=Theme.button("查看详情",false);buttons.add(details);details.addActionListener(e -> details());page.add(buttons,BorderLayout.SOUTH);
+        refresh.addActionListener(e -> load(false));search.addActionListener(e -> load(false));reset.addActionListener(e -> {search.setText("");category.setSelectedIndex(0);load(false);});table.addMouseListener(new MouseAdapter(){@Override public void mouseClicked(MouseEvent e){if(e.getClickCount()==2)details();}});load(false);
+    }
+    private void load(boolean warning){String key=search.getText(),cat=(String)category.getSelectedItem();long generation=++queryGeneration;count.setText("正在查询…");Tasks.run(this,refresh,() -> platform.medicinals(key,cat),list -> {if(generation!=queryGeneration)return;records=list;Theme.rows(table,list.stream().map(m -> new Object[]{m.code(),m.name(),m.category(),m.origin(),m.stock(),m.price(),m.lowStock()?"⚠ 库存偏低":"正常"}).toList());long low=list.stream().filter(Medicinal::lowStock).count();count.setText("共 "+list.size()+" 条药材   ·   "+low+" 条库存预警   ·   "+(user.role().canEdit()?"可维护数据":"访客只读模式"));if(warning){StringBuilder msg=new StringBuilder("当前查询范围内的库存预警：\n\n");for(Medicinal m:list)if(m.lowStock())msg.append(m.name()).append("：").append(m.stock()).append(" 克，阈值 ").append(m.threshold()).append(" 克\n");if(low==0)msg.append("暂无低库存药材。");JOptionPane.showMessageDialog(this,msg.toString(),"库存预警",low>0?JOptionPane.WARNING_MESSAGE:JOptionPane.INFORMATION_MESSAGE);}});}
+    private Medicinal selected(){int i=table.getSelectedRow();if(i<0){Theme.message(this,"请先选择一条药材记录");return null;}return records.get(table.convertRowIndexToModel(i));}
+    private void details(){Medicinal m=selected();if(m==null)return;JTextArea text=new JTextArea("药材编号："+m.code()+"\n药材名称："+m.name()+"\n药材分类："+m.category()+"\n产地："+m.origin()+"\n库存："+m.stock()+" 克\n单价："+m.price()+" 元 / 克\n预警阈值："+m.threshold()+" 克\n\n功效\n"+m.efficacy()+"\n\n用法\n"+m.usage()+"\n\n储存条件\n"+m.storage(),19,42);text.setEditable(false);text.setFont(Theme.BODY);text.setLineWrap(true);text.setWrapStyleWord(true);text.setMargin(new Insets(16,16,16,16));text.setCaretPosition(0);JOptionPane.showMessageDialog(this,Theme.scroll(text),"药材详情 · "+m.name(),JOptionPane.PLAIN_MESSAGE);}
+    private void editor(Medicinal m){
+        JDialog dialog=new JDialog((Frame)SwingUtilities.getWindowAncestor(this),m==null?"新增药材":"编辑药材资料",true);JPanel root=new JPanel(new BorderLayout(0,15));root.setBorder(BorderFactory.createEmptyBorder(20,24,20,24));dialog.setContentPane(root);JPanel form=new JPanel(new GridBagLayout());GridBagConstraints g=new GridBagConstraints();g.insets=new Insets(6,8,6,8);g.anchor=GridBagConstraints.WEST;g.fill=GridBagConstraints.HORIZONTAL;
+        JTextField code=Theme.field(23),name=Theme.field(23),origin=Theme.field(23),stock=Theme.field(23),price=Theme.field(23),threshold=Theme.field(23);JComboBox<String> cat=new JComboBox<>(Platform.CATEGORIES);JTextArea efficacy=new JTextArea(3,23),usage=new JTextArea(3,23),storage=new JTextArea(2,23);
+        for(JTextArea a:java.util.List.of(efficacy,usage,storage)){a.setLineWrap(true);a.setWrapStyleWord(true);a.setFont(Theme.BODY);a.setMargin(new Insets(7,8,7,8));}
+        if(m!=null){code.setText(m.code());name.setText(m.name());cat.setSelectedItem(m.category());origin.setText(m.origin());stock.setText(""+m.stock());stock.setEditable(false);stock.setToolTipText("库存变动请使用入库 / 出库操作");price.setText(m.price().toPlainString());threshold.setText(""+m.threshold());efficacy.setText(m.efficacy());usage.setText(m.usage());storage.setText(m.storage());}else{stock.setText("0");price.setText("0.00");threshold.setText("20");}
+        Component[] fields={code,name,cat,origin,stock,price,threshold,Theme.scroll(efficacy),Theme.scroll(usage),Theme.scroll(storage)};String[] labels={"药材编号","药材名称","分类","产地","库存 / 克","单价 / 元每克","预警阈值 / 克","功效","用法","储存条件"};for(int i=0;i<fields.length;i++){g.gridy=i;g.gridx=0;g.weightx=0;form.add(new JLabel(labels[i]),g);g.gridx=1;g.weightx=1;form.add(fields[i],g);}root.add(Theme.scroll(form));JButton save=Theme.button("保存药材",true),cancel=Theme.button("取消",false);root.add(Theme.row(save,cancel),BorderLayout.SOUTH);cancel.addActionListener(e -> dialog.dispose());
+        save.addActionListener(e -> {try{Medicinal next=new Medicinal(m==null?0:m.id(),code.getText(),name.getText(),(String)cat.getSelectedItem(),origin.getText(),Integer.parseInt(stock.getText().trim()),new BigDecimal(price.getText().trim()),efficacy.getText(),usage.getText(),storage.getText(),Integer.parseInt(threshold.getText().trim()));Tasks.run(dialog,save,() -> {platform.saveMedicinal(user,next);return next;},saved -> {dialog.dispose();load(saved.lowStock());});}catch(NumberFormatException ex){Theme.message(dialog,"库存和阈值请输入整数，单价请输入有效金额。");}});
+        dialog.setSize(560,690);dialog.setMinimumSize(new Dimension(520,500));dialog.setLocationRelativeTo(this);dialog.setVisible(true);
+    }
+    private void stock(boolean inbound,JButton trigger){Medicinal m=selected();if(m==null)return;JTextField amount=Theme.field(16),note=Theme.field(16);JPanel form=new JPanel(new GridLayout(0,2,12,12));form.add(new JLabel("药材"));form.add(new JLabel(m.name()+"（现有 "+m.stock()+" 克）"));form.add(new JLabel((inbound?"入库":"出库")+"数量 / 克"));form.add(amount);form.add(new JLabel("备注"));form.add(note);if(JOptionPane.showConfirmDialog(this,form,inbound?"药材入库":"药材出库",JOptionPane.OK_CANCEL_OPTION,JOptionPane.PLAIN_MESSAGE)!=JOptionPane.OK_OPTION)return;try{int quantity=Integer.parseInt(amount.getText().trim());if(quantity<=0)throw new NumberFormatException();String memo=note.getText();Tasks.run(this,trigger,() -> {platform.adjustStock(user,m.id(),inbound?quantity:-quantity,memo);return true;},ok -> load(true));}catch(NumberFormatException ex){Theme.message(this,"请输入大于 0 的整数数量。");}}
+}
