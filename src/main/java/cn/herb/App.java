@@ -4,6 +4,7 @@ import cn.herb.dao.Database;
 import cn.herb.service.Platform;
 import cn.herb.view.LoginFrame;
 import cn.herb.view.Theme;
+import cn.herb.util.EmailCodeService;
 import javax.swing.*;
 import java.io.*;
 import java.nio.file.*;
@@ -14,7 +15,8 @@ public final class App {
         Theme.install();
         Properties config=loadConfig();
         Database db=new Database(config.getProperty("jdbc.url","jdbc:h2:file:./data/herb-manager;MODE=MySQL;DB_CLOSE_DELAY=-1"),config.getProperty("jdbc.username","sa"),config.getProperty("jdbc.password",""));
-        Platform platform=new Platform(db);
+        EmailCodeService emailCodes=new EmailCodeService(config.getProperty("smtp.host","smtp.qq.com"),config.getProperty("smtp.port","465"),config.getProperty("smtp.username",""),config.getProperty("smtp.password",""));
+        Platform platform=new Platform(db,emailCodes,config.getProperty("app.default-email",config.getProperty("smtp.username","test@example.com")));
         try { platform.initialize(); } catch(RuntimeException e) { JOptionPane.showMessageDialog(null,"数据库初始化失败：\n"+e.getMessage()+"\n\n请检查 config.properties 中的 MySQL 地址、用户名和密码。","启动失败",JOptionPane.ERROR_MESSAGE); return; }
         SwingUtilities.invokeLater(() -> new LoginFrame(platform,db.mysql()?"MySQL":"本地演示数据库").setVisible(true));
     }

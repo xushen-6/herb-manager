@@ -22,11 +22,13 @@ jdbc.password=
 
 也可以直接运行根目录 `init.bat`。脚本会创建数据库、写入配置并调用 `InitApp` 建表和写入演示数据。
 
+注册邮箱验证码通过 Java 的 Jakarta Mail 发送，验证码只保存在当前进程内，5 分钟后失效，使用一次后立即删除。登录阶段不发送验证码，只校验账号和密码。
+
 ## 表结构
 
 | 表 | 用途 | 关键字段 |
 |---|---|---|
-| `app_user` | 用户和角色 | `username` 唯一，`password_hash`，`role` |
+| `app_user` | 用户和角色 | `username` 唯一，`email`，`password_hash`，`role` |
 | `medicinal` | 药材档案 | `code` 唯一，名称、分类、库存、单价、功效、用法、储存、阈值 |
 | `login_log` | 登录日志 | 账号、时间 |
 | `chat_history` | 用户问答历史 | `user_id` 外键、问题、回答、时间 |

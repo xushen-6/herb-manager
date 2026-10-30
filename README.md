@@ -8,7 +8,7 @@ Java 17 + Swing + JDBC + MySQL 8.0/8.4（无 HTML、JavaScript、Vue 或其他�
 2. 双击根目录的 `stop.bat` 结束本项目；脚本会询问是否同时停止 MySQL80 服务，以免影响其他项目。
 3. 在新设备上先双击根目录的 `init.bat`，选择 MySQL 或本地 H2；脚本会生成配置、创建表并写入演示数据。
 4. 也可以直接运行 `mvn test` 验证业务层。
-5. 复制 `config.properties.example` 为 `config.properties`，填入 MySQL 账户；如果不复制，程序使用本地 H2 演示数据库。
+5. 复制 `config.properties.example` 为 `config.properties`，填入 MySQL 账户和 QQ SMTP 配置；注册邮箱验证码依赖 SMTP 配置。如果不复制，程序使用本地 H2 演示数据库，但不能发送注册邮件。
 6. 使用 `mvn package` 打包，运行 `java -jar target/herb-manager.jar`。
 7. 演示账户：`admin / Admin123!`、`pharmacist / Pharm123!`、`guest / Guest123!`，首次启动后请修改密码。
 
@@ -19,6 +19,7 @@ Java 17 + Swing + JDBC + MySQL 8.0/8.4（无 HTML、JavaScript、Vue 或其他�
 - 访客：查看药材、药材详情、关键词问答和自己的问答历史。
 - 药材：名称/分类筛选，详情，低库存弹窗，事务化库存变更。
 - 资料：昵称、密码修改；密码按作业要求使用 MD5 存库。
+- 注册：使用 QQ SMTP 邮箱验证码，登录仍使用账号和密码。
 
 ## 项目结构
 

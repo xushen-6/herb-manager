@@ -19,8 +19,7 @@ class PlatformTest {
         pharmacist = p.login("pharmacist", "Pharm123!", "ABCD", "ABCD");
         guest = p.login("guest", "Guest123!", "ABCD", "ABCD");
     }
-    @Test void loginValidatesCaptchaAndPassword() {
-        assertThrows(IllegalArgumentException.class, () -> p.login("admin", "Admin123!", "WRONG", "ABCD"));
+    @Test void loginValidatesPasswordAndRecordsLog() {
         assertThrows(IllegalArgumentException.class, () -> p.login("admin", "wrong", "ABCD", "ABCD"));
         assertEquals(Role.ADMIN, admin.role());
         assertEquals(3, p.loginLogs(admin).size());

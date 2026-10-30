@@ -26,6 +26,10 @@ set /p "DB_PASS=MySQL password: "
 set "DB_NAME=herb_manager"
 set /p "DB_NAME=Database name [herb_manager]: "
 if "%DB_NAME%"=="" set "DB_NAME=herb_manager"
+set "SMTP_USER=3856638905@qq.com"
+set /p "SMTP_USER=QQ SMTP sender email [3856638905@qq.com]: "
+if "%SMTP_USER%"=="" set "SMTP_USER=3856638905@qq.com"
+set /p "SMTP_PASS=QQ SMTP authorization code: "
 
 set "MYSQL_CMD=mysql"
 where mysql >nul 2>nul
@@ -45,12 +49,16 @@ if errorlevel 1 (
 )
 
 set "DB_URL=jdbc:mysql://%DB_HOST%:%DB_PORT%/%DB_NAME%?useUnicode=true^&characterEncoding=UTF-8^&serverTimezone=Asia/Shanghai^&useSSL=false^&allowPublicKeyRetrieval=true"
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$lines=@('jdbc.url='+$env:DB_URL,'jdbc.username='+$env:DB_USER,'jdbc.password='+$env:DB_PASS); [IO.File]::WriteAllLines((Join-Path (Get-Location) 'config.properties'),$lines,(New-Object Text.UTF8Encoding($false)))"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$lines=@('jdbc.url='+$env:DB_URL,'jdbc.username='+$env:DB_USER,'jdbc.password='+$env:DB_PASS,'smtp.host=smtp.qq.com','smtp.port=465','smtp.username='+$env:SMTP_USER,'smtp.password='+$env:SMTP_PASS,'app.default-email='+$env:SMTP_USER); [IO.File]::WriteAllLines((Join-Path (Get-Location) 'config.properties'),$lines,(New-Object Text.UTF8Encoding($false)))"
 goto BUILD_AND_INIT
 
 :INIT_H2
 echo Using local H2 database. MySQL is not required on this device.
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$lines=@('jdbc.url=jdbc:h2:file:./data/herb-manager;MODE=MySQL;DB_CLOSE_DELAY=-1','jdbc.username=sa','jdbc.password='); New-Item -ItemType Directory -Force data | Out-Null; [IO.File]::WriteAllLines((Join-Path (Get-Location) 'config.properties'),$lines,(New-Object Text.UTF8Encoding($false)))"
+set "SMTP_USER=3856638905@qq.com"
+set /p "SMTP_USER=QQ SMTP sender email [3856638905@qq.com]: "
+if "%SMTP_USER%"=="" set "SMTP_USER=3856638905@qq.com"
+set /p "SMTP_PASS=QQ SMTP authorization code: "
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$lines=@('jdbc.url=jdbc:h2:file:./data/herb-manager;MODE=MySQL;DB_CLOSE_DELAY=-1','jdbc.username=sa','jdbc.password=','smtp.host=smtp.qq.com','smtp.port=465','smtp.username='+$env:SMTP_USER,'smtp.password='+$env:SMTP_PASS,'app.default-email='+$env:SMTP_USER); New-Item -ItemType Directory -Force data | Out-Null; [IO.File]::WriteAllLines((Join-Path (Get-Location) 'config.properties'),$lines,(New-Object Text.UTF8Encoding($false)))"
 
 :BUILD_AND_INIT
 if not exist "target\herb-manager.jar" (

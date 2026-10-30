@@ -3,4 +3,11 @@ jdbc.url=jdbc:mysql://127.0.0.1:3306/herb_manager?useUnicode=true&characterEncod
 jdbc.username=root
 jdbc.password=请填写本机密码
 
+# QQ SMTP 配置；smtp.password 填 QQ 邮箱授权码，不是 QQ 登录密码。
+smtp.host=smtp.qq.com
+smtp.port=465
+smtp.username=你的QQ邮箱@qq.com
+smtp.password=填写QQ邮箱SMTP授权码
+app.default-email=你的QQ邮箱@qq.com
+
 # 不放 config.properties 时，程序使用 ./data/herb-manager H2 演示数据库，可直接运行。

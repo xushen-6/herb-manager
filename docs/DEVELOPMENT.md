@@ -29,7 +29,7 @@ java -jar target\herb-manager.jar
 
 现有测试位于 `src/test/java/cn/herb/PlatformTest.java`，使用随机 H2 内存数据库。测试已经覆盖：
 
-- 验证码和密码错误。
+- 密码错误和注册邮箱验证码由 service 统一校验。
 - 注册、重复账号和角色默认值。
 - 访客写入、药师用户管理越权。
 - 药材增删改查、筛选、重复编号和非法库存。

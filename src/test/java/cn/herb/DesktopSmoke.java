@@ -20,7 +20,6 @@ public final class DesktopSmoke {
         SwingUtilities.invokeAndWait(() -> {
             ((JTextField)find("login.username")).setText("admin");
             ((JPasswordField)find("login.password")).setText("Admin123!");
-            ((JTextField)find("login.captcha")).setText(((JLabel)find("login.captcha.code")).getText());
             ((JButton)find("login.submit")).doClick();
         });
         waitFor("nav.药材管理");

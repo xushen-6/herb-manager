@@ -3,6 +3,7 @@ package cn.herb.service;
 import cn.herb.dao.*;
 import cn.herb.model.*;
 import cn.herb.util.Passwords;
+import cn.herb.util.EmailCodeService;
 import java.math.BigDecimal;
 import java.sql.*;
 import java.util.*;
@@ -12,14 +13,18 @@ public final class Platform {
     public static final String[] CATEGORIES={"清热","理气","补血","利湿","补气","解表","安神","其他"};
     private final Database db;
     private final JdbcDao dao;
-    public Platform(Database db) { this.db=db; dao=new JdbcDao(db); }
+    private final EmailCodeService emailCodes;
+    private final String defaultEmail;
+    public Platform(Database db) { this(db,new EmailCodeService("","","", ""),"test@example.com"); }
+    public Platform(Database db,EmailCodeService emailCodes,String defaultEmail) { this.db=db;dao=new JdbcDao(db);this.emailCodes=emailCodes;this.defaultEmail=defaultEmail; }
     public void initialize() {
         db.initialize();
         if(dao.query("SELECT COUNT(*) FROM app_user",r -> r.getLong(1)).get(0)==0) {
-            insertUser("admin","Admin123!","系统管理员",Role.ADMIN);
-            insertUser("pharmacist","Pharm123!","值班药师",Role.PHARMACIST);
-            insertUser("guest","Guest123!","体验访客",Role.GUEST);
+            insertUser("admin",defaultEmail,"Admin123!","系统管理员",Role.ADMIN);
+            insertUser("pharmacist",defaultEmail,"Pharm123!","值班药师",Role.PHARMACIST);
+            insertUser("guest",defaultEmail,"Guest123!","体验访客",Role.GUEST);
         }
+        dao.update("UPDATE app_user SET email=? WHERE email IS NULL OR TRIM(email)=''",defaultEmail);
         // 演示种子仅在首次建库时写入；删除全部药材后不会再次自动恢复。
         dao.update("CREATE TABLE IF NOT EXISTS app_meta (meta_key VARCHAR(50) PRIMARY KEY, meta_value VARCHAR(100))");
         if(dao.query("SELECT meta_value FROM app_meta WHERE meta_key='seeded'",r -> r.getString(1)).isEmpty()) {
@@ -40,22 +45,24 @@ public final class Platform {
         };
         for(String[] r:rows) writeMedicinal(new Medicinal(0,r[0],r[1],r[2],r[3],Integer.parseInt(r[4]),new BigDecimal(r[5]),r[6],r[7],r[8],Integer.parseInt(r[9])));
     }
-    public User login(String username,String password,String captcha,String expected) {
-        if(expected==null || expected.isBlank() || captcha==null || !expected.equalsIgnoreCase(captcha.trim())) throw new IllegalArgumentException("验证码不正确，请重试");
-        var users=dao.query("SELECT * FROM app_user WHERE username=? AND password_hash=?",Platform::user,clean(username),Passwords.md5(password==null?"":password));
-        if(users.isEmpty()) throw new IllegalArgumentException("账号或密码不正确");
-        dao.update("INSERT INTO login_log(username) VALUES(?)",users.get(0).username());
-        return users.get(0);
+    /** 账号密码登录；正式界面不再使用图形验证码。 */
+    public User login(String username,String password) { User user=credentialUser(username,password);dao.update("INSERT INTO login_log(username) VALUES(?)",user.username());return user; }
+    @Deprecated public User login(String username,String password,String captcha,String expected) {
+        return login(username,password);
     }
-    public void register(String username,String password,String name) { insertUser(username,password,name,Role.GUEST); }
+    private User credentialUser(String username,String password) { var users=dao.query("SELECT * FROM app_user WHERE username=? AND password_hash=?",Platform::user,clean(username),Passwords.md5(password==null?"":password));if(users.isEmpty()) throw new IllegalArgumentException("账号或密码不正确");return users.get(0); }
+    public void sendRegistrationCode(String email) { if(!EmailCodeService.validEmail(email)) throw new IllegalArgumentException("请输入有效的邮箱地址");emailCodes.send(clean(email),"register|"+clean(email).toLowerCase(Locale.ROOT)); }
+    /** 测试和兼容入口，不发送验证码；注册界面使用 registerVerified。 */
+    public void register(String username,String password,String name) { insertUser(username,defaultEmail,password,name,Role.GUEST); }
+    public void registerVerified(String username,String email,String rawPassword,String name,String code) { if(!EmailCodeService.validEmail(email)) throw new IllegalArgumentException("请输入有效的邮箱地址");emailCodes.verify("register|"+clean(email).toLowerCase(Locale.ROOT),code);insertUser(username,email,rawPassword,name,Role.GUEST); }
     public void createUser(User actor,String username,String password,String name,Role role) {
-        requireAdmin(actor); if(role==null) throw new IllegalArgumentException("请选择角色"); insertUser(username,password,name,role);
+        requireAdmin(actor); if(role==null) throw new IllegalArgumentException("请选择角色"); insertUser(username,actor.email(),password,name,role);
     }
-    private void insertUser(String username,String password,String name,Role role) {
+    private void insertUser(String username,String email,String password,String name,Role role) {
         username=clean(username);
         if(!username.matches("[A-Za-z0-9_]{3,32}")) throw new IllegalArgumentException("账号应为 3～32 位字母、数字或下划线");
-        validPassword(password); text(name,"姓名",50);
-        dao.update("INSERT INTO app_user(username,password_hash,display_name,role) VALUES(?,?,?,?)",username,Passwords.md5(password),name.trim(),role.name());
+        validPassword(password); text(name,"姓名",50);if(!EmailCodeService.validEmail(email)) throw new IllegalArgumentException("请输入有效的邮箱地址");
+        dao.update("INSERT INTO app_user(username,email,password_hash,display_name,role) VALUES(?,?,?,?,?)",username,email.trim(),Passwords.md5(password),name.trim(),role.name());
     }
     public List<User> users(User actor) { requireAdmin(actor); return dao.query("SELECT * FROM app_user ORDER BY id",Platform::user); }
     public void deleteUser(User actor,long id) {
@@ -69,7 +76,7 @@ public final class Platform {
             int changed=dao.update("UPDATE app_user SET display_name=?,password_hash=? WHERE id=? AND password_hash=?",name.trim(),Passwords.md5(newPassword),current.id(),Passwords.md5(oldPassword==null?"":oldPassword));
             if(changed!=1) throw new IllegalArgumentException("原密码不正确");
         } else dao.update("UPDATE app_user SET display_name=? WHERE id=?",name.trim(),current.id());
-        return new User(current.id(),current.username(),name.trim(),current.role());
+        return new User(current.id(),current.username(),current.email(),name.trim(),current.role());
     }
     public List<Medicinal> medicinals(String keyword,String category) {
         String key=clean(keyword).replace("!","!!").replace("%","!%").replace("_","!_");
@@ -123,7 +130,7 @@ public final class Platform {
     }
     private void requireAdmin(User actor) { if(requireUser(actor).role()!=Role.ADMIN) throw new SecurityException("只有管理员可以执行此操作"); }
     private User requireEdit(User actor) { User current=requireUser(actor); if(!current.role().canEdit()) throw new SecurityException("访客仅有查看权限"); return current; }
-    private static User user(ResultSet r) throws SQLException { return new User(r.getLong("id"),r.getString("username"),r.getString("display_name"),Role.valueOf(r.getString("role"))); }
+    private static User user(ResultSet r) throws SQLException { return new User(r.getLong("id"),r.getString("username"),r.getString("email"),r.getString("display_name"),Role.valueOf(r.getString("role"))); }
     private static Medicinal medicinal(ResultSet r) throws SQLException { return new Medicinal(r.getLong("id"),r.getString("code"),r.getString("name"),r.getString("category"),r.getString("origin"),r.getInt("stock"),r.getBigDecimal("price"),r.getString("efficacy"),r.getString("usage_text"),r.getString("storage"),r.getInt("threshold_qty")); }
     private static String clean(String s) { return s==null?"":s.trim(); }
     private static void text(String value,String label,int max) { if(clean(value).isEmpty() || clean(value).length()>max) throw new IllegalArgumentException(label+"不能为空且不能超过 "+max+" 字"); }
