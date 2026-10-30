@@ -8,6 +8,7 @@ import javax.swing.border.EmptyBorder;
 import java.awt.*;
 import java.time.LocalDate;
 import java.util.*;
+import cn.herb.util.Assets;
 
 public final class MainFrame extends JFrame {
     private final Platform platform;
@@ -37,13 +38,17 @@ public final class MainFrame extends JFrame {
         dashboard();
     }
     private void updateIdentity(){identity.setText(user.displayName()+"   /   "+user.role());}
-    private void addNav(JPanel parent,String label,Runnable action){JButton b=Theme.button(label,false);b.setName("nav."+label);b.setAlignmentX(Component.LEFT_ALIGNMENT);b.setMaximumSize(new Dimension(165,45));b.setHorizontalAlignment(SwingConstants.LEFT);b.setBorder(new EmptyBorder(12,17,12,10));b.addActionListener(e -> action.run());parent.add(b);parent.add(Box.createVerticalStrut(10));navigation.put(label,b);}
+    private void addNav(JPanel parent,String label,Runnable action){JButton b=Theme.button(label,false);b.setName("nav."+label);b.setAlignmentX(Component.LEFT_ALIGNMENT);b.setMaximumSize(new Dimension(165,45));b.setHorizontalAlignment(SwingConstants.LEFT);b.setBorder(new EmptyBorder(8,10,8,10));String icon=switch(label){case "药材管理"->"icon-herb-v1.png";case "库存流水"->"icon-inventory-v1.png";case "智能问答"->"icon-qa-v1.png";case "用户管理","个人资料"->"icon-user-v1.png";default->null;};if(icon!=null)b.setIcon(Assets.icon(icon,28,28));b.setIconTextGap(8);b.addActionListener(e -> action.run());parent.add(b);parent.add(Box.createVerticalStrut(10));navigation.put(label,b);}
     private void show(String key,JPanel panel){for(var entry:navigation.entrySet()){boolean active=entry.getKey().equals(key);entry.getValue().setBackground(active?new Color(230,239,222):Theme.GREEN);entry.getValue().setForeground(active?Theme.GREEN:new Color(220,234,216));}content.removeAll();content.add(panel);content.revalidate();content.repaint();}
     private void logout(){if(!Theme.confirm(this,"退出当前账户并返回登录界面？"))return;dispose();new LoginFrame(platform,mode).setVisible(true);}
     private void dashboard(){
         JPanel page=Theme.page("药材管理，一目了然",LocalDate.now()+"   /   你好，"+user.displayName()+"。查看库存状况，开始今天的工作。");
+        ImageIcon accent=Assets.icon("dashboard-accent-v1.png",220,145);
+        if(accent!=null){ JLabel art=new JLabel(accent); art.setHorizontalAlignment(SwingConstants.RIGHT); page.add(art,BorderLayout.EAST); }
         JPanel body=new JPanel(new BorderLayout(0,24));body.setOpaque(false);JPanel stats=new JPanel(new GridLayout(1,4,16,0));stats.setOpaque(false);body.add(stats,BorderLayout.NORTH);
-        JTable table=Theme.table("药材编号","药材名称","当前库存 / 克","预警阈值 / 克","状态");JPanel warnings=new JPanel(new BorderLayout(0,12));warnings.setOpaque(false);warnings.add(Theme.row(Theme.label("库存关注",18,Theme.GREEN),Theme.label("低于预警阈值的药材",12,Theme.MUTED)),BorderLayout.NORTH);warnings.add(Theme.scroll(table));body.add(warnings);
+        HerbChartPanel charts=new HerbChartPanel();
+        body.add(charts,BorderLayout.CENTER);
+        JTable table=Theme.table("药材编号","药材名称","当前库存 / 克","预警阈值 / 克","状态");JPanel warnings=new JPanel(new BorderLayout(0,12));warnings.setOpaque(false);warnings.add(Theme.row(Theme.label("库存关注",18,Theme.GREEN),Theme.label("低于预警阈值的药材",12,Theme.MUTED)),BorderLayout.NORTH);warnings.add(Theme.scroll(table));JPanel visual=new JPanel(new GridLayout(1,2,16,0));visual.setOpaque(false);visual.add(charts);visual.add(warnings);body.add(visual,BorderLayout.CENTER);
         JPanel actions=Theme.row();JButton herbs=Theme.button("进入药材管理 →",true),chat=Theme.button("打开知识问答",false),refresh=Theme.button("刷新概览",false);herbs.addActionListener(e -> navigation.get("药材管理").doClick());chat.addActionListener(e -> navigation.get("智能问答").doClick());refresh.addActionListener(e -> dashboard());actions.add(herbs);actions.add(chat);actions.add(refresh);body.add(actions,BorderLayout.SOUTH);page.add(body);show("工作台",page);
         Tasks.run(this,null,() -> platform.medicinals("","全部"),list -> {
             if(!page.isShowing())return;
@@ -51,6 +56,7 @@ public final class MainFrame extends JFrame {
             stats.add(metric("药材档案",String.valueOf(list.size()),"种在册药材"));stats.add(metric("库存总量",String.format("%,d",qty),"克 · 实时库存"));stats.add(metric("库存预警",String.valueOf(low),"种需要关注"));stats.add(metric("药材分类",String.valueOf(cats),"类已收录"));
             Theme.rows(table,list.stream().filter(Medicinal::lowStock).map(m -> new Object[]{m.code(),m.name(),m.stock(),m.threshold(),"待补货"}).toList());
             stats.revalidate();stats.repaint();
+            if(user.role().canEdit()) Tasks.run(this,null,() -> platform.stockLogs(user), rows -> charts.setData(list,rows)); else charts.setData(list,List.of());
         });
     }
     private JPanel metric(String label,String value,String hint){JPanel p=Theme.stack(0);p.setOpaque(true);p.setBackground(Color.WHITE);p.setBorder(new EmptyBorder(22,22,22,18));p.add(Theme.label(label,13,Theme.MUTED));p.add(Box.createVerticalStrut(12));JLabel n=Theme.label(value,32,Theme.GREEN);n.setFont(n.getFont().deriveFont(Font.BOLD));p.add(n);p.add(Box.createVerticalStrut(6));p.add(Theme.label(hint,12,Theme.MUTED));return p;}

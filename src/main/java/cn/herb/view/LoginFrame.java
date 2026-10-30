@@ -5,6 +5,8 @@ import cn.herb.service.Platform;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
+import java.awt.image.BufferedImage;
+import cn.herb.util.Assets;
 
 /** 登录和注册共用同一个窗口，通过右侧表单切换完成流程。 */
 public final class LoginFrame extends JFrame {
@@ -20,12 +22,14 @@ public final class LoginFrame extends JFrame {
         setDefaultCloseOperation(EXIT_ON_CLOSE);setSize(1000,650);setMinimumSize(new Dimension(900,600));setLocationRelativeTo(null);
         JPanel root=new JPanel(new BorderLayout());setContentPane(root);
         JPanel brand=new BrandPanel();brand.setPreferredSize(new Dimension(430,0));root.add(brand,BorderLayout.WEST);
-        formHost.setOpaque(false);JPanel right=new JPanel(new GridBagLayout());right.setBackground(Color.WHITE);right.add(formHost);root.add(right,BorderLayout.CENTER);
+        formHost.setOpaque(false);JPanel right=new JPanel(new BorderLayout());right.setBackground(Color.WHITE);
+        JScrollPane formScroll=new JScrollPane(formHost,ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        formScroll.setBorder(null);formScroll.getViewport().setBackground(Color.WHITE);formScroll.getVerticalScrollBar().setUnitIncrement(18);right.add(formScroll,BorderLayout.CENTER);root.add(right,BorderLayout.CENTER);
         showLogin();
     }
 
     private void showLogin() {
-        formHost.removeAll();
+        formHost.removeAll();formHost.setBorder(new EmptyBorder(28,70,28,70));
         JPanel form=baseForm("欢迎回来","登录账户，开始今天的药材管理");
         addField(form,"账号",username,"login.username");
         Theme.input(password);password.setName("login.password");addField(form,"密码",password,null);
@@ -38,7 +42,7 @@ public final class LoginFrame extends JFrame {
     }
 
     private void showRegister() {
-        formHost.removeAll();
+        formHost.removeAll();formHost.setBorder(new EmptyBorder(28,70,28,70));
         JPanel form=baseForm("注册访客账户","填写邮箱并获取验证码，完成后返回登录");
         JTextField account=Theme.field(21),email=Theme.field(21),emailCode=Theme.field(10),name=Theme.field(21);
         JPasswordField raw=new JPasswordField(21),again=new JPasswordField(21);Theme.input(raw);Theme.input(again);
@@ -60,7 +64,17 @@ public final class LoginFrame extends JFrame {
     private void submitLogin() { String u=username.getText(),p=new String(password.getPassword());Tasks.run(this,login,() -> platform.login(u,p),user -> {dispose();new MainFrame(platform,user,mode).setVisible(true);}); }
 
     private static final class BrandPanel extends JPanel {
+        private final BufferedImage illustration=Assets.image("login-background-v1.png");
         BrandPanel(){setBackground(Theme.GREEN);setLayout(new BorderLayout());setBorder(new EmptyBorder(52,42,45,30));JPanel top=Theme.stack(0);top.add(Theme.label("BENCAO  /  本草",16,new Color(221,230,205)));top.add(Box.createVerticalStrut(80));JLabel heading=Theme.label("本草有序",38,Color.WHITE);heading.setFont(heading.getFont().deriveFont(Font.BOLD));top.add(heading);top.add(Box.createVerticalStrut(14));top.add(Theme.label("让药材管理，简单而清晰。",18,new Color(219,232,214)));add(top,BorderLayout.NORTH);JPanel bottom=Theme.stack(0);bottom.add(Theme.label("药材档案   /   库存流转   /   知识问答",13,new Color(219,232,214)));bottom.add(Box.createVerticalStrut(15));bottom.add(Theme.label("Java 程序设计项目实践 · 基础版 1.0",12,new Color(183,204,180)));add(bottom,BorderLayout.SOUTH);}
-        @Override protected void paintComponent(Graphics graphics){super.paintComponent(graphics);Graphics2D g=(Graphics2D)graphics.create();g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);g.setColor(new Color(64,113,81));g.setStroke(new BasicStroke(2));int x=235,y=385;g.drawArc(x-100,y-100,210,200,10,280);for(int i=0;i<6;i++){int yy=y-85+i*27;g.drawOval(x-60,yy,65,25);g.drawOval(x+5,yy+12,65,25);}g.drawLine(x+3,y-100,x+3,y+100);g.dispose();}
+        @Override protected void paintComponent(Graphics graphics){
+            super.paintComponent(graphics);Graphics2D g=(Graphics2D)graphics.create();
+            if(illustration!=null && getWidth()>0 && getHeight()>0){
+                double scale=Math.max((double)getWidth()/illustration.getWidth(),(double)getHeight()/illustration.getHeight());
+                int drawWidth=(int)Math.ceil(illustration.getWidth()*scale),drawHeight=(int)Math.ceil(illustration.getHeight()*scale);
+                int x=(getWidth()-drawWidth)/2,y=(getHeight()-drawHeight)/2;
+                g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER,0.28f));g.drawImage(illustration,x,y,drawWidth,drawHeight,null);
+            }
+            g.setComposite(AlphaComposite.SrcOver);g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);g.setColor(new Color(64,113,81));g.setStroke(new BasicStroke(2));int x=235,y=385;g.drawArc(x-100,y-100,210,200,10,280);for(int i=0;i<6;i++){int yy=y-85+i*27;g.drawOval(x-60,yy,65,25);g.drawOval(x+5,yy+12,65,25);}g.drawLine(x+3,y-100,x+3,y+100);g.dispose();
+        }
     }
 }
