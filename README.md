@@ -10,7 +10,7 @@ Java 17 + Swing + JDBC + MySQL 8.0/8.4（无 HTML、JavaScript、Vue 或其他�
 4. 也可以直接运行 `mvn test` 验证业务层。
 5. 复制 `config.properties.example` 为 `config.properties`，填入 MySQL 账户和 QQ SMTP 配置；注册邮箱验证码依赖 SMTP 配置。如果不复制，程序使用本地 H2 演示数据库，但不能发送注册邮件。
 6. 使用 `mvn package` 打包，运行 `java -jar target/herb-manager.jar`。
-7. 演示账户：`admin / Admin123!`、`pharmacist / Pharm123!`、`guest / Guest123!`，首次启动后请修改密码。
+7. 演示账户：`admin / 123456`、`yaoshi / 123456`、`123456 / 123456`。
 
 ## 功能
 

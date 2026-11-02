@@ -1,6 +1,7 @@
 package cn.herb;
 
 import cn.herb.dao.Database;
+import cn.herb.dao.JdbcDao;
 import cn.herb.model.*;
 import cn.herb.service.Platform;
 import org.junit.jupiter.api.*;
@@ -15,9 +16,9 @@ class PlatformTest {
     @BeforeEach void setup() {
         p = new Platform(new Database("jdbc:h2:mem:" + UUID.randomUUID() + ";MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", ""));
         p.initialize();
-        admin = p.login("admin", "Admin123!", "ABCD", "abcd");
-        pharmacist = p.login("pharmacist", "Pharm123!", "ABCD", "ABCD");
-        guest = p.login("guest", "Guest123!", "ABCD", "ABCD");
+        admin = p.login("admin", "123456", "ABCD", "abcd");
+        pharmacist = p.login("yaoshi", "123456", "ABCD", "ABCD");
+        guest = p.login("123456", "123456", "ABCD", "ABCD");
     }
     @Test void loginValidatesPasswordAndRecordsLog() {
         assertThrows(IllegalArgumentException.class, () -> p.login("admin", "wrong", "ABCD", "ABCD"));
@@ -81,12 +82,29 @@ class PlatformTest {
         User changed = p.updateProfile(guest,"新昵称","","");
         assertEquals("新昵称",changed.displayName());
         assertThrows(IllegalArgumentException.class,() -> p.updateProfile(guest,"新昵称","wrong","Newpass123!"));
-        p.updateProfile(guest,"新昵称","Guest123!","Newpass123!");
-        assertEquals(guest.id(), p.login("guest","Newpass123!","X","X").id());
+        p.updateProfile(guest,"新昵称","123456","Newpass123!");
+        assertEquals(guest.id(), p.login("123456","Newpass123!","X","X").id());
     }
     @Test void initializationIsIdempotent() {
         int n = p.medicinals("","全部").size(); p.initialize();
         assertEquals(n,p.medicinals("","全部").size());
         assertEquals(3,p.users(admin).size());
+    }
+    @Test void initializationMigratesLegacyDemoAccountsWhenTargetAlreadyExists() {
+        Database db = new Database("jdbc:h2:mem:" + UUID.randomUUID() + ";MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "");
+        db.initialize();
+        JdbcDao dao = new JdbcDao(db);
+        String sql = "INSERT INTO app_user(username,email,password_hash,display_name,role) VALUES(?,?,?,?,?)";
+        dao.update(sql,"admin","admin@example.com","old","管理员","ADMIN");
+        dao.update(sql,"pharmacist","pharmacist@example.com","old","药师","PHARMACIST");
+        dao.update(sql,"guest","guest@example.com","old","访客","GUEST");
+        dao.update(sql,"123456","user@example.com","old","已注册用户","GUEST");
+        Platform migrated = new Platform(db);
+        migrated.initialize();
+        assertEquals(Role.ADMIN,migrated.login("admin","123456").role());
+        assertEquals(Role.PHARMACIST,migrated.login("yaoshi","123456").role());
+        assertEquals(Role.GUEST,migrated.login("123456","123456").role());
+        assertThrows(IllegalArgumentException.class,() -> migrated.login("guest","123456"));
+        assertEquals(3,migrated.users(migrated.login("admin","123456")).size());
     }
 }

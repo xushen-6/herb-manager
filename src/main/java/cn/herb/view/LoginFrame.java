@@ -48,7 +48,7 @@ public final class LoginFrame extends JFrame {
         JPasswordField raw=new JPasswordField(21),again=new JPasswordField(21);Theme.input(raw);Theme.input(again);
         addField(form,"账号",account,"register.username");addField(form,"QQ 邮箱",email,"register.email");
         JButton send=Theme.button("发送验证码",false);JPanel codeRow=new JPanel(new BorderLayout(10,0));codeRow.setOpaque(false);codeRow.add(emailCode);codeRow.add(send,BorderLayout.EAST);addField(form,"邮箱验证码",codeRow,"register.code");
-        addField(form,"姓名 / 昵称",name,"register.name");addField(form,"密码（至少 8 位）",raw,null);addField(form,"确认密码",again,null);
+        addField(form,"姓名 / 昵称",name,"register.name");addField(form,"密码（至少 6 位）",raw,null);addField(form,"确认密码",again,null);
         JButton submit=Theme.button("完成注册",true);submit.setName("register.submit");addRow(form,submit,18);
         JButton back=Theme.button("返回登录",false);back.setName("register.back");back.addActionListener(e -> showLogin());addRow(form,back,3);
         addRow(form,Theme.label("验证码 5 分钟内有效，发送频率为每分钟一次",12,Theme.MUTED),3);

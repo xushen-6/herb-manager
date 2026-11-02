@@ -20,16 +20,37 @@ public final class Platform {
     public void initialize() {
         db.initialize();
         if(dao.query("SELECT COUNT(*) FROM app_user",r -> r.getLong(1)).get(0)==0) {
-            insertUser("admin",defaultEmail,"Admin123!","系统管理员",Role.ADMIN);
-            insertUser("pharmacist",defaultEmail,"Pharm123!","值班药师",Role.PHARMACIST);
-            insertUser("guest",defaultEmail,"Guest123!","体验访客",Role.GUEST);
+            insertUser("admin",defaultEmail,"123456","系统管理员",Role.ADMIN);
+            insertUser("yaoshi",defaultEmail,"123456","值班药师",Role.PHARMACIST);
+            insertUser("123456",defaultEmail,"123456","体验访客",Role.GUEST);
         }
+        migrateDemoAccounts();
         dao.update("UPDATE app_user SET email=? WHERE email IS NULL OR TRIM(email)=''",defaultEmail);
         // 演示种子仅在首次建库时写入；删除全部药材后不会再次自动恢复。
         dao.update("CREATE TABLE IF NOT EXISTS app_meta (meta_key VARCHAR(50) PRIMARY KEY, meta_value VARCHAR(100))");
         if(dao.query("SELECT meta_value FROM app_meta WHERE meta_key='seeded'",r -> r.getString(1)).isEmpty()) {
             if(medicinals("","全部").isEmpty()) seedHerbs();
             dao.update("INSERT INTO app_meta(meta_key,meta_value) VALUES('seeded','true')");
+        }
+    }
+    private void migrateDemoAccounts() {
+        migrateDemoAccount("pharmacist","yaoshi",Role.PHARMACIST);
+        migrateDemoAccount("guest","123456",Role.GUEST);
+        dao.update("UPDATE app_user SET password_hash=?, role=?, email=COALESCE(NULLIF(TRIM(email),''), ?) WHERE username='admin'",Passwords.md5("123456"),Role.ADMIN.name(),defaultEmail);
+        dao.update("UPDATE app_user SET password_hash=?, role=?, email=COALESCE(NULLIF(TRIM(email),''), ?) WHERE username='yaoshi'",Passwords.md5("123456"),Role.PHARMACIST.name(),defaultEmail);
+        dao.update("UPDATE app_user SET password_hash=?, role=?, email=COALESCE(NULLIF(TRIM(email),''), ?) WHERE username='123456'",Passwords.md5("123456"),Role.GUEST.name(),defaultEmail);
+    }
+    private void migrateDemoAccount(String legacy, String target, Role role) {
+        List<Long> oldIds=dao.query("SELECT id FROM app_user WHERE username=?",r -> r.getLong(1),legacy);
+        if(oldIds.isEmpty()) return;
+        List<Long> targetIds=dao.query("SELECT id FROM app_user WHERE username=?",r -> r.getLong(1),target);
+        long oldId=oldIds.get(0);
+        if(targetIds.isEmpty()) {
+            dao.update("UPDATE app_user SET username=?, role=? WHERE id=?",target,role.name(),oldId);
+        } else if(targetIds.get(0)!=oldId) {
+            long targetId=targetIds.get(0);
+            dao.update("UPDATE chat_history SET user_id=? WHERE user_id=?",targetId,oldId);
+            dao.update("DELETE FROM app_user WHERE id=?",oldId);
         }
     }
     private void seedHerbs() {
@@ -134,5 +155,5 @@ public final class Platform {
     private static Medicinal medicinal(ResultSet r) throws SQLException { return new Medicinal(r.getLong("id"),r.getString("code"),r.getString("name"),r.getString("category"),r.getString("origin"),r.getInt("stock"),r.getBigDecimal("price"),r.getString("efficacy"),r.getString("usage_text"),r.getString("storage"),r.getInt("threshold_qty")); }
     private static String clean(String s) { return s==null?"":s.trim(); }
     private static void text(String value,String label,int max) { if(clean(value).isEmpty() || clean(value).length()>max) throw new IllegalArgumentException(label+"不能为空且不能超过 "+max+" 字"); }
-    private static void validPassword(String p) { if(p==null || p.length()<8 || p.length()>64) throw new IllegalArgumentException("密码长度应为 8～64 位"); }
+    private static void validPassword(String p) { if(p==null || p.length()<6 || p.length()>64) throw new IllegalArgumentException("密码长度应为 6～64 位"); }
 }
