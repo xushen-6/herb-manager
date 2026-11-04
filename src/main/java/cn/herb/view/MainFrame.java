@@ -236,8 +236,15 @@ public final class MainFrame extends JFrame {
         table.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
         warnings.add(Theme.scroll(table), BorderLayout.CENTER);
 
-        Theme.ResponsiveGrid visual = Theme.responsiveGrid(2, 2, 1, 16, 16);
+        // 图表是工作台的主视觉，使用整行宽度展示；库存表放在图表下方，避免
+        // GridLayout 将完整图表压缩到半幅后只剩标题和水平滚动条。
+        JPanel visual = new JPanel();
+        visual.setOpaque(false);
+        visual.setLayout(new BoxLayout(visual, BoxLayout.Y_AXIS));
+        charts.setAlignmentX(Component.LEFT_ALIGNMENT);
+        warnings.setAlignmentX(Component.LEFT_ALIGNMENT);
         visual.add(charts);
+        visual.add(Box.createVerticalStrut(18));
         visual.add(warnings);
         body.add(visual, BorderLayout.CENTER);
 
