@@ -1,0 +1,19 @@
+﻿本草中药材管理平台 源码与演示包
+
+运行条件：Java 17 或以上版本、图形桌面环境、可访问 lzhan.xyz 的网络。
+Windows：解压整个文件夹，双击 start.bat。
+Linux/macOS：解压后进入目录，执行 sh start.sh。
+无需 Maven、编译器、本地 MySQL，也不需要安装 EXE。
+请先解压，勿直接在压缩软件中运行。
+
+管理员：admin / 123456
+药师：yaoshi / 123456
+访客：123456 / 123456
+输入图片验证码登录，点击图片刷新。
+
+包内包含 src 源码、测试、完整图片资源、部署文档、打包脚本、预编译 app/herb-manager.jar。
+config.properties 按要求包含演示密钥，默认 server.url 指向云端，数据库、注册邮件和 AI 由服务器处理。
+config.local-demo.properties 是本地开发备用配置，使用前需自行准备本机数据库。
+不包含 SSH 管理密码或 SSH 私钥。
+
+修改源码后：使用 JDK 17+ 和 Maven 执行 mvn test package，将 target/herb-manager.jar 复制到 app/herb-manager.jar。源码重新编译需要 Maven 和下载依赖的网络。

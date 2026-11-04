@@ -42,6 +42,7 @@ public final class MainFrame extends JFrame {
 
     public MainFrame(Platform platform, User user, String mode) {
         super("本草 · 中药材智能管理平台");
+        setIconImage(cn.herb.util.Assets.image("herb-icon.png"));
         this.platform = platform;
         this.user = user;
         this.mode = mode;
@@ -202,8 +203,10 @@ public final class MainFrame extends JFrame {
 
     private void logout() {
         if (!Theme.confirm(this, "退出当前账户并返回登录界面？")) return;
-        dispose();
-        new LoginFrame(platform, mode).setVisible(true);
+        Tasks.run(this, null, () -> { platform.logout();return true; }, done -> {
+            dispose();
+            new LoginFrame(platform, mode).setVisible(true);
+        });
     }
 
     private void dashboard() {
@@ -221,15 +224,16 @@ public final class MainFrame extends JFrame {
 
         HerbChartPanel charts = new HerbChartPanel();
         charts.setName("dashboard.charts");
-        JTable table = Theme.table("药材编号", "药材名称", "当前库存 / 克", "预警阈值 / 克", "状态");
+        JTable table = Theme.table("药材编号", "药材名称", "当前库存 / 克", "库存基准 / 克", "达标率", "状态");
         JPanel warnings = Theme.card();
         warnings.setLayout(new BorderLayout(0, 12));
         warnings.setBorder(new EmptyBorder(18, 18, 18, 18));
         JPanel warningHeading = new JPanel(new BorderLayout());
         warningHeading.setOpaque(false);
-        warningHeading.add(Theme.label("库存关注", 18, Theme.GREEN), BorderLayout.WEST);
-        warningHeading.add(Theme.label("低于预警阈值的药材", 12, Theme.MUTED), BorderLayout.EAST);
+        warningHeading.add(Theme.label("库存数量与基准", 18, Theme.GREEN), BorderLayout.WEST);
+        warningHeading.add(Theme.label("实时库存 ÷ 基准库存 × 100%", 12, Theme.MUTED), BorderLayout.EAST);
         warnings.add(warningHeading, BorderLayout.NORTH);
+        table.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
         warnings.add(Theme.scroll(table), BorderLayout.CENTER);
 
         Theme.ResponsiveGrid visual = Theme.responsiveGrid(2, 2, 1, 16, 16);
@@ -261,7 +265,7 @@ public final class MainFrame extends JFrame {
             stats.add(metric("库存总量", String.format("%,d", qty), "克 · 实时库存"));
             stats.add(metric("库存预警", String.valueOf(low), "种需要关注"));
             stats.add(metric("药材分类", String.valueOf(cats), "类已收录"));
-            Theme.rows(table, list.stream().filter(Medicinal::lowStock).map(m -> new Object[]{m.code(), m.name(), m.stock(), m.threshold(), "待补货"}).toList());
+            Theme.rows(table, list.stream().map(m -> new Object[]{m.code(), m.name(), m.stock(), m.threshold(), String.format(java.util.Locale.ROOT,"%.1f%%",m.stock()*100d/Math.max(1,m.threshold())), m.lowStock()?"待补货":"库存达标"}).toList());
             stats.revalidate();
             stats.repaint();
             if (user.role().canEdit()) Tasks.run(this, null, () -> platform.stockLogs(user), rows -> charts.setData(list, rows));

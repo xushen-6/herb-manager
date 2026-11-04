@@ -1,5 +1,6 @@
 target/
 data/
 config.properties
+config.local-demo.properties
 *.log
 work/

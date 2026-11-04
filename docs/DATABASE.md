@@ -22,7 +22,7 @@ jdbc.password=
 
 也可以直接运行根目录 `init.bat`。脚本会创建数据库、写入配置并调用 `InitApp` 建表和写入演示数据。
 
-注册邮箱验证码通过 Java 的 Jakarta Mail 发送，验证码只保存在当前进程内，5 分钟后失效，使用一次后立即删除。登录阶段不发送验证码，只校验账号和密码。
+注册邮箱验证码通过 Java 的 Jakarta Mail 发送，验证码只保存在当前进程内，5 分钟后失效，使用一次后立即删除。登录使用本地生成的 4 位图片验证码，点击图片刷新，不区分大小写，5 分钟内有效，每次提交后更换；图片验证码不联网，也不写入数据库。
 
 ## 表结构
 
@@ -36,6 +36,8 @@ jdbc.password=
 | `app_meta` | 初始化标记 | `seeded=true` 防止重复写入演示药材 |
 
 表由 `Database.initialize()` 使用 `CREATE TABLE IF NOT EXISTS` 创建。应用首次启动时 `Platform.initialize()` 创建默认用户和药材；重复启动不会重复插入种子。
+
+`chat_history.answer` 在 MySQL 使用 `LONGTEXT`，在 H2 使用 `CLOB`，完整保存本地知识库和在线问答的长回答。启动时自动升级旧版的 `VARCHAR(4000)` 字段，保留已有历史和非空约束；字段已升级时不重复修改。
 
 ## 数据规则
 

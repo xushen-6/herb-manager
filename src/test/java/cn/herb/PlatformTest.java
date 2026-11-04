@@ -85,6 +85,41 @@ class PlatformTest {
         p.updateProfile(guest,"新昵称","123456","Newpass123!");
         assertEquals(guest.id(), p.login("123456","Newpass123!","X","X").id());
     }
+    @Test void longKnowledgeAnswersAreSavedWithoutTruncation() {
+        String efficacy = "教学功效".repeat(250), usage = "教学用法".repeat(250);
+        for (String name : List.of("长文本甲药", "长文本乙药")) {
+            p.saveMedicinal(admin, new Medicinal(0, name, name, "清热", "四川", 10,
+                    BigDecimal.ONE, efficacy, usage, "阴凉干燥", 5));
+        }
+        String answer = p.ask(guest, "长文本甲药和长文本乙药的功效与用法");
+        assertTrue(answer.length() > 4000);
+        assertTrue(answer.contains("长文本甲药"));
+        assertTrue(answer.contains("长文本乙药"));
+        assertEquals(answer, p.history(guest).get(0).answer());
+        assertEquals(2, answer.split(efficacy, -1).length - 1);
+        assertEquals(2, answer.split(usage, -1).length - 1);
+    }
+    @Test void legacyAnswerColumnIsUpgradedWithoutLosingHistory() {
+        Database db = new Database("jdbc:h2:mem:" + UUID.randomUUID() + ";MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "");
+        Platform legacy = new Platform(db);
+        legacy.initialize();
+        User user = legacy.login("123456", "123456");
+        JdbcDao dao = new JdbcDao(db);
+        dao.update("ALTER TABLE chat_history ALTER COLUMN answer VARCHAR(4000) NOT NULL");
+        String oldAnswer = legacy.ask(user, "黄芪的功效");
+
+        db.initialize();
+        db.initialize(); // 重复启动也应安全，已有历史不能丢失。
+        String longAnswer = "中药知识🌿".repeat(20000);
+        dao.update("INSERT INTO chat_history(user_id,question,answer) VALUES(?,?,?)",
+                user.id(), "长回答", longAnswer);
+        var history = legacy.history(user);
+        assertEquals(2, history.size());
+        assertEquals(longAnswer, history.get(0).answer());
+        assertEquals(oldAnswer, history.get(1).answer());
+        assertThrows(IllegalArgumentException.class, () -> dao.update(
+                "INSERT INTO chat_history(user_id,question,answer) VALUES(?,?,?)", user.id(), "无效回答", null));
+    }
     @Test void initializationIsIdempotent() {
         int n = p.medicinals("","全部").size(); p.initialize();
         assertEquals(n,p.medicinals("","全部").size());

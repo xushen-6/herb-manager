@@ -4,6 +4,7 @@ import cn.herb.dao.*;
 import cn.herb.model.*;
 import cn.herb.util.Passwords;
 import cn.herb.util.EmailCodeService;
+import cn.herb.util.ImageCaptcha;
 import java.math.BigDecimal;
 import java.sql.*;
 import java.util.*;
@@ -15,9 +16,17 @@ public final class Platform {
     private final JdbcDao dao;
     private final EmailCodeService emailCodes;
     private final String defaultEmail;
-    public Platform(Database db) { this(db,new EmailCodeService("","","", ""),"test@example.com"); }
-    public Platform(Database db,EmailCodeService emailCodes,String defaultEmail) { this.db=db;dao=new JdbcDao(db);this.emailCodes=emailCodes;this.defaultEmail=defaultEmail; }
+    private final DeepSeekClient deepSeek;
+    private final RemotePlatform remote;
+    public Platform(RemotePlatform remote) { this.remote=Objects.requireNonNull(remote);db=null;dao=null;emailCodes=null;defaultEmail="";deepSeek=null; }
+    public Platform(Database db) { this(db,new EmailCodeService("","","", ""),"test@example.com", null); }
+    public Platform(Database db,EmailCodeService emailCodes,String defaultEmail) { this(db,emailCodes,defaultEmail,null); }
+    public Platform(Database db,EmailCodeService emailCodes,String defaultEmail,DeepSeekClient deepSeek) { this.remote=null;this.db=db;dao=new JdbcDao(db);this.emailCodes=emailCodes;this.defaultEmail=defaultEmail;this.deepSeek=deepSeek; }
+    public boolean aiEnabled() { return remote!=null?remote.aiEnabled():deepSeek!=null && deepSeek.enabled(); }
+    public boolean remoteEnabled() { return remote!=null; }
+    public void logout() { if(remote!=null) remote.logout(); }
     public void initialize() {
+        if(remote!=null){remote.initialize();return;}
         db.initialize();
         if(dao.query("SELECT COUNT(*) FROM app_user",r -> r.getLong(1)).get(0)==0) {
             insertUser("admin",defaultEmail,"123456","系统管理员",Role.ADMIN);
@@ -66,17 +75,24 @@ public final class Platform {
         };
         for(String[] r:rows) writeMedicinal(new Medicinal(0,r[0],r[1],r[2],r[3],Integer.parseInt(r[4]),new BigDecimal(r[5]),r[6],r[7],r[8],Integer.parseInt(r[9])));
     }
-    /** 账号密码登录；正式界面不再使用图形验证码。 */
-    public User login(String username,String password) { User user=credentialUser(username,password);dao.update("INSERT INTO login_log(username) VALUES(?)",user.username());return user; }
+    /** 账号密码基础入口，桌面登录使用带本地图片验证码的重载。 */
+    public User login(String username,String password) { if(remote!=null)return remote.login(username,password);User user=credentialUser(username,password);dao.update("INSERT INTO login_log(username) VALUES(?)",user.username());return user; }
+    public User login(String username,String password,ImageCaptcha captcha,String input) {
+        if(captcha==null) throw new IllegalArgumentException("请刷新图片验证码");
+        captcha.verify(input);
+        return login(username,password);
+    }
     @Deprecated public User login(String username,String password,String captcha,String expected) {
+        if(clean(expected).isEmpty() || clean(captcha).isEmpty() || !clean(captcha).equalsIgnoreCase(clean(expected))) throw new IllegalArgumentException("图片验证码不正确");
         return login(username,password);
     }
     private User credentialUser(String username,String password) { var users=dao.query("SELECT * FROM app_user WHERE username=? AND password_hash=?",Platform::user,clean(username),Passwords.md5(password==null?"":password));if(users.isEmpty()) throw new IllegalArgumentException("账号或密码不正确");return users.get(0); }
-    public void sendRegistrationCode(String email) { if(!EmailCodeService.validEmail(email)) throw new IllegalArgumentException("请输入有效的邮箱地址");emailCodes.send(clean(email),"register|"+clean(email).toLowerCase(Locale.ROOT)); }
+    public void sendRegistrationCode(String email) { if(!EmailCodeService.validEmail(email)) throw new IllegalArgumentException("请输入有效的邮箱地址");if(remote!=null){remote.call("send-code",Wire.fields("email",email));return;}emailCodes.send(clean(email),"register|"+clean(email).toLowerCase(Locale.ROOT)); }
     /** 测试和兼容入口，不发送验证码；注册界面使用 registerVerified。 */
-    public void register(String username,String password,String name) { insertUser(username,defaultEmail,password,name,Role.GUEST); }
-    public void registerVerified(String username,String email,String rawPassword,String name,String code) { if(!EmailCodeService.validEmail(email)) throw new IllegalArgumentException("请输入有效的邮箱地址");emailCodes.verify("register|"+clean(email).toLowerCase(Locale.ROOT),code);insertUser(username,email,rawPassword,name,Role.GUEST); }
+    public void register(String username,String password,String name) { if(remote!=null)throw new IllegalArgumentException("请通过邮箱验证码注册");insertUser(username,defaultEmail,password,name,Role.GUEST); }
+    public void registerVerified(String username,String email,String rawPassword,String name,String code) { if(!EmailCodeService.validEmail(email)) throw new IllegalArgumentException("请输入有效的邮箱地址");if(remote!=null){remote.call("register",Wire.fields("username",username,"email",email,"password",rawPassword,"name",name,"code",code));return;}emailCodes.verify("register|"+clean(email).toLowerCase(Locale.ROOT),code);insertUser(username,email,rawPassword,name,Role.GUEST); }
     public void createUser(User actor,String username,String password,String name,Role role) {
+        if(remote!=null){remote.call("create-user",Wire.fields("username",username,"password",password,"name",name,"role",role==null?"":role.name()));return;}
         requireAdmin(actor); if(role==null) throw new IllegalArgumentException("请选择角色"); insertUser(username,actor.email(),password,name,role);
     }
     private void insertUser(String username,String email,String password,String name,Role role) {
@@ -85,12 +101,14 @@ public final class Platform {
         validPassword(password); text(name,"姓名",50);if(!EmailCodeService.validEmail(email)) throw new IllegalArgumentException("请输入有效的邮箱地址");
         dao.update("INSERT INTO app_user(username,email,password_hash,display_name,role) VALUES(?,?,?,?,?)",username,email.trim(),Passwords.md5(password),name.trim(),role.name());
     }
-    public List<User> users(User actor) { requireAdmin(actor); return dao.query("SELECT * FROM app_user ORDER BY id",Platform::user); }
+    public List<User> users(User actor) { if(remote!=null)return remote.users();requireAdmin(actor); return dao.query("SELECT * FROM app_user ORDER BY id",Platform::user); }
     public void deleteUser(User actor,long id) {
+        if(remote!=null){remote.call("delete-user",Wire.fields("id",id));return;}
         requireAdmin(actor); if(actor.id()==id) throw new IllegalArgumentException("不能删除当前登录账号");
         if(dao.update("DELETE FROM app_user WHERE id=?",id)!=1) throw new IllegalArgumentException("用户不存在");
     }
     public User updateProfile(User actor,String name,String oldPassword,String newPassword) {
+        if(remote!=null)return Wire.user(remote.call("profile",Wire.fields("name",name,"oldPassword",oldPassword,"newPassword",newPassword)));
         User current=requireUser(actor); text(name,"姓名",50);
         if(newPassword!=null && !newPassword.isEmpty()) {
             validPassword(newPassword);
@@ -100,11 +118,13 @@ public final class Platform {
         return new User(current.id(),current.username(),current.email(),name.trim(),current.role());
     }
     public List<Medicinal> medicinals(String keyword,String category) {
+        if(remote!=null)return remote.medicinals(keyword,category);
         String key=clean(keyword).replace("!","!!").replace("%","!%").replace("_","!_");
         if(category==null || category.equals("全部")) return dao.query("SELECT * FROM medicinal WHERE name LIKE ? ESCAPE '!' ORDER BY id",Platform::medicinal,"%"+key+"%");
         return dao.query("SELECT * FROM medicinal WHERE name LIKE ? ESCAPE '!' AND category=? ORDER BY id",Platform::medicinal,"%"+key+"%",category);
     }
     public void saveMedicinal(User actor,Medicinal m) {
+        if(remote!=null){remote.call("save-medicinal",Wire.medicinal(m));return;}
         requireEdit(actor); Objects.requireNonNull(m);
         text(m.code(),"药材编号",32); text(m.name(),"名称",50); text(m.category(),"分类",30); text(m.origin(),"产地",80);
         text(m.efficacy(),"功效",1000); text(m.usage(),"用法",1000); text(m.storage(),"储存条件",200);
@@ -120,29 +140,39 @@ public final class Platform {
             if(dao.update("UPDATE medicinal SET code=?,name=?,category=?,origin=?,price=?,efficacy=?,usage_text=?,storage=?,threshold_qty=? WHERE id=?",m.code().trim(),m.name().trim(),m.category(),m.origin().trim(),m.price(),m.efficacy().trim(),m.usage().trim(),m.storage().trim(),m.threshold(),m.id())!=1) throw new IllegalArgumentException("药材已被删除，请刷新");
         }
     }
-    public void deleteMedicinal(User actor,long id) { requireEdit(actor); if(dao.update("DELETE FROM medicinal WHERE id=?",id)!=1) throw new IllegalArgumentException("药材不存在"); }
+    public void deleteMedicinal(User actor,long id) { if(remote!=null){remote.call("delete-medicinal",Wire.fields("id",id));return;}requireEdit(actor); if(dao.update("DELETE FROM medicinal WHERE id=?",id)!=1) throw new IllegalArgumentException("药材不存在"); }
     public void adjustStock(User actor,long id,int delta,String note) {
+        if(remote!=null){remote.call("adjust-stock",Wire.fields("id",id,"delta",delta,"note",note));return;}
         User current=requireEdit(actor);
         if(delta==0 || Math.abs((long)delta)>1000000000) throw new IllegalArgumentException("入出库数量应在 1～1000000000 之间");
         if(clean(note).length()>200) throw new IllegalArgumentException("备注不能超过 200 字");
         dao.adjustStock(id,delta,current.username(),clean(note));
     }
     public String ask(User actor,String question) {
+        if(remote!=null)return remote.call("ask",Wire.fields("question",question)).get("answer");
         User current=requireUser(actor); text(question,"问题",500); question=question.trim();
         List<Medicinal> all=medicinals("","全部");
         String q=question;
         List<Medicinal> matches=all.stream().filter(m -> q.contains(m.name())).toList();
         if(matches.isEmpty()) matches=all.stream().filter(m -> Arrays.stream(m.efficacy().split("[，、。\\s]+" )).anyMatch(k -> k.length()>=2 && q.contains(k))).limit(3).toList();
+        String answer;
+        if(deepSeek!=null && deepSeek.enabled()) {
+            try { answer=deepSeek.answer(question,matches.isEmpty()?all.stream().limit(12).toList():matches); }
+            catch(RuntimeException failure) { answer=localAnswer(matches); }
+        } else answer=localAnswer(matches);
+        dao.update("INSERT INTO chat_history(user_id,question,answer) VALUES(?,?,?)",current.id(),question,answer);
+        return answer;
+    }
+    private static String localAnswer(List<Medicinal> matches) {
         StringBuilder answer=new StringBuilder();
         if(matches.isEmpty()) answer.append("未匹配到相关药材。可以试试“黄芪的功效”“当归怎么保存”，或输入功效关键词，例如“清热解毒”。");
-        else for(Medicinal m:matches) answer.append(m.name()).append("\n功效：").append(m.efficacy()).append("\n用法：").append(m.usage()).append("\n储存：").append(m.storage()).append("\n\n");
+        else for(Medicinal m:matches) answer.append(m.name()).append("\n功效：").append(m.efficacy()).append("\n用法：").append(m.usage()).append("\n储存：").append(m.storage()).append("\n当前库存：").append(m.stock()).append(" 克（基准 ").append(m.threshold()).append(" 克）\n\n");
         answer.append("\n内容为课程知识库演示，不能替代专业诊疗建议。");
-        dao.update("INSERT INTO chat_history(user_id,question,answer) VALUES(?,?,?)",current.id(),question,answer.toString());
         return answer.toString();
     }
-    public List<ChatRecord> history(User actor) { User current=requireUser(actor); return dao.query("SELECT * FROM chat_history WHERE user_id=? ORDER BY id DESC LIMIT 100",r -> new ChatRecord(r.getLong("id"),r.getString("question"),r.getString("answer"),r.getString("created_at")),current.id()); }
-    public List<Object[]> loginLogs(User actor) { requireAdmin(actor); return dao.query("SELECT * FROM login_log ORDER BY id DESC LIMIT 300",r -> new Object[]{r.getLong("id"),r.getString("username"),r.getString("created_at")}); }
-    public List<Object[]> stockLogs(User actor) { requireEdit(actor); return dao.query("SELECT * FROM stock_log ORDER BY id DESC LIMIT 300",r -> new Object[]{r.getString("medicinal_code"),r.getString("medicinal_name"),r.getInt("quantity_change"),r.getInt("remaining"),r.getString("operator_name"),r.getString("note"),r.getString("created_at")}); }
+    public List<ChatRecord> history(User actor) { if(remote!=null)return remote.history();User current=requireUser(actor); return dao.query("SELECT * FROM chat_history WHERE user_id=? ORDER BY id DESC LIMIT 100",r -> new ChatRecord(r.getLong("id"),r.getString("question"),r.getString("answer"),r.getString("created_at")),current.id()); }
+    public List<Object[]> loginLogs(User actor) { if(remote!=null)return remote.logs(true);requireAdmin(actor); return dao.query("SELECT * FROM login_log ORDER BY id DESC LIMIT 300",r -> new Object[]{r.getLong("id"),r.getString("username"),r.getString("created_at")}); }
+    public List<Object[]> stockLogs(User actor) { if(remote!=null)return remote.logs(false);requireEdit(actor); return dao.query("SELECT * FROM stock_log ORDER BY id DESC LIMIT 300",r -> new Object[]{r.getString("medicinal_code"),r.getString("medicinal_name"),r.getInt("quantity_change"),r.getInt("remaining"),r.getString("operator_name"),r.getString("note"),r.getString("created_at")}); }
     private User requireUser(User actor) {
         if(actor==null) throw new SecurityException("请先登录");
         var records=dao.query("SELECT * FROM app_user WHERE id=?",Platform::user,actor.id());

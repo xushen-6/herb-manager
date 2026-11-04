@@ -2,6 +2,7 @@ package cn.herb.view;
 
 import cn.herb.controller.Tasks;
 import cn.herb.service.Platform;
+import cn.herb.util.ImageCaptcha;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
@@ -17,12 +18,16 @@ public final class LoginFrame extends JFrame {
     private final JPanel formHost = new JPanel(new GridBagLayout());
     private final JTextField username = Theme.field(21);
     private final JPasswordField password = new JPasswordField(21);
+    private final JTextField captchaInput = Theme.field(8);
+    private final JButton captchaImage = new JButton();
+    private ImageCaptcha captcha;
     private final JButton login = Theme.button("登 录 平 台", true);
     private JPanel brand;
     private JPanel right;
 
     public LoginFrame(Platform platform, String mode) {
         super("本草 · 中药材智能管理平台");
+        setIconImage(Assets.image("herb-icon.png"));
         this.platform = platform;
         this.mode = mode;
         setDefaultCloseOperation(EXIT_ON_CLOSE);
@@ -46,6 +51,17 @@ public final class LoginFrame extends JFrame {
         right.add(formScroll, BorderLayout.CENTER);
         root.add(right, BorderLayout.CENTER);
         login.addActionListener(event -> submitLogin());
+        captchaImage.setName("login.captcha.image");
+        captchaImage.setToolTipText("点击刷新验证码，5 分钟内有效，不区分大小写");
+        captchaImage.getAccessibleContext().setAccessibleName("图片验证码，点击刷新");
+        captchaImage.setMargin(new Insets(0, 0, 0, 0));
+        captchaImage.setPreferredSize(new Dimension(144, 46));
+        captchaImage.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        captchaImage.addActionListener(event -> refreshCaptcha());
+        login.addPropertyChangeListener("enabled", event -> {
+            captchaInput.setEnabled(login.isEnabled());
+            captchaImage.setEnabled(login.isEnabled());
+        });
         addComponentListener(new ComponentAdapter() {
             @Override public void componentResized(ComponentEvent event) {
                 updateResponsiveLayout();
@@ -74,13 +90,21 @@ public final class LoginFrame extends JFrame {
         Theme.input(password);
         password.setName("login.password");
         addField(form, "密码", password, null);
+        JPanel captchaRow = new JPanel(new BorderLayout(10, 0));
+        captchaRow.setOpaque(false);
+        captchaRow.add(captchaInput, BorderLayout.CENTER);
+        captchaRow.add(captchaImage, BorderLayout.EAST);
+        captchaInput.setName("login.captcha");
+        captchaInput.setToolTipText("输入右侧图片中的 4 位字符，不区分大小写");
+        addField(form, "图片验证码（点击图片可刷新）", captchaRow, null);
+        refreshCaptcha();
         login.setName("login.submit");
         addRow(form, login, 20);
         JButton register = Theme.button("没有账号？注册访客账户", false);
         register.setName("login.register");
         register.addActionListener(event -> showRegister());
         addRow(form, register, 3);
-        addRow(form, Theme.label("登录使用账号和密码，注册时需要邮箱验证码", 12, Theme.MUTED), 3);
+        addRow(form, Theme.label("登录需图片验证码，注册需邮箱验证码", 12, Theme.MUTED), 3);
         addRow(form, Theme.label("数据库：" + mode, 12, Theme.MUTED), 3);
         formHost.add(form);
         finishForm();
@@ -141,7 +165,7 @@ public final class LoginFrame extends JFrame {
     private JPanel baseForm(String title, String subtitle) {
         JPanel form = new JPanel(new GridBagLayout());
         form.setOpaque(false);
-        form.setPreferredSize(new Dimension(430, 500));
+        form.setMinimumSize(new Dimension(300, 0));
         GridBagConstraints grid = new GridBagConstraints();
         grid.gridx = 0;
         grid.gridy = 0;
@@ -173,12 +197,22 @@ public final class LoginFrame extends JFrame {
     }
 
     private void submitLogin() {
+        if (!login.isEnabled()) return;
         String account = username.getText();
         String rawPassword = new String(password.getPassword());
-        Tasks.run(this, login, () -> platform.login(account, rawPassword), loggedIn -> {
+        ImageCaptcha challenge = captcha;
+        String code = captchaInput.getText();
+        refreshCaptcha();
+        Tasks.run(this, login, () -> platform.login(account, rawPassword, challenge, code), loggedIn -> {
             dispose();
             new MainFrame(platform, loggedIn, mode).setVisible(true);
         });
+    }
+
+    private void refreshCaptcha() {
+        captcha = new ImageCaptcha();
+        captchaImage.setIcon(new ImageIcon(captcha.image()));
+        captchaInput.setText("");
     }
 
     private static final class BrandPanel extends JPanel {

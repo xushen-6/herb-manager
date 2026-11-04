@@ -19,7 +19,7 @@ import java.util.List;
  */
 public final class DeepSeekClient {
     public static final String DEFAULT_ENDPOINT = "https://api.deepseek.com/chat/completions";
-    public static final String DEFAULT_MODEL = "deepseek-v4-flash";
+    public static final String DEFAULT_MODEL = "deepseek-flash";
 
     private final HttpClient httpClient;
     private final String apiKey;

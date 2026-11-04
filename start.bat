@@ -1,49 +1,29 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-
-echo ========================================
-echo   Herb Manager - Java Swing Application
-echo ========================================
-
-where java >nul 2>nul
+set "JAVA_CMD=java"
+if defined JAVA_HOME if exist "%JAVA_HOME%\bin\java.exe" set "JAVA_CMD=%JAVA_HOME%\bin\java.exe"
+"%JAVA_CMD%" -version >nul 2>nul
 if errorlevel 1 goto NO_JAVA
 
-if exist "target\herb-manager.jar" goto RUN_APP
-
-echo JAR not found. Building with Maven...
-set "MVN_CMD=mvn"
-where mvn >nul 2>nul
-if errorlevel 1 set "MVN_CMD=C:\Users\xushen\tools\apache-maven-3.9.15\bin\mvn.cmd"
-if not exist "%MVN_CMD%" goto NO_MAVEN
-call "%MVN_CMD%" package -q
-if errorlevel 1 goto BUILD_FAILED
+set "APP_JAR=app\herb-manager.jar"
+if exist "%APP_JAR%" goto RUN_APP
+set "APP_JAR=target\herb-manager.pending.jar"
+if exist "%APP_JAR%" goto RUN_APP
+set "APP_JAR=target\herb-manager.jar"
+if exist "%APP_JAR%" goto RUN_APP
+echo ERROR: Application JAR is missing. Extract the complete source/demo ZIP.
+goto FAILED
 
 :RUN_APP
-echo Starting application...
-java -Dfile.encoding=UTF-8 -jar "target\herb-manager.jar"
-if errorlevel 1 goto APP_FAILED
-goto END
+echo Herb Manager - requires Java 17 or newer and an internet connection.
+"%JAVA_CMD%" -Dfile.encoding=UTF-8 -jar "%APP_JAR%" %*
+if errorlevel 1 goto FAILED
+exit /b 0
 
 :NO_JAVA
-echo ERROR: Java 17 or newer was not found.
-pause
+echo ERROR: Java was not found. Install Java 17 or newer, or set JAVA_HOME.
+:FAILED
+echo If startup failed, check Java version and network access to lzhan.xyz.
+if not "%~1"=="--check-connection" pause
 exit /b 1
-
-:NO_MAVEN
-echo ERROR: Maven was not found. Run "mvn package" manually first.
-pause
-exit /b 1
-
-:BUILD_FAILED
-echo ERROR: Maven build failed.
-pause
-exit /b 1
-
-:APP_FAILED
-echo ERROR: Application exited unexpectedly. Check config.properties and MySQL.
-pause
-exit /b 1
-
-:END
-endlocal

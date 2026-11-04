@@ -13,8 +13,8 @@ import javax.imageio.ImageIO;
 public final class DesktopSmoke {
     public static void main(String[] args) throws Exception {
         Path out=Path.of(args.length==0?"work/screenshots":args[0]); Files.createDirectories(out);
-        Platform platform=new Platform(new Database("jdbc:h2:mem:desktop;MODE=MySQL;DB_CLOSE_DELAY=-1","sa","")); platform.initialize();
-        SwingUtilities.invokeAndWait(() -> { Theme.install(); new LoginFrame(platform,"界面检查数据库").setVisible(true); });
+        Platform platform=args.length>1?new Platform(new cn.herb.service.RemotePlatform(args[1])):new Platform(new Database("jdbc:h2:mem:desktop;MODE=MySQL;DB_CLOSE_DELAY=-1","sa","")); platform.initialize();
+        SwingUtilities.invokeAndWait(() -> { Theme.install(); new LoginFrame(platform,args.length>1?"云端 MySQL":"界面检查数据库").setVisible(true); });
         Thread.sleep(700);
         capture(out.resolve("01-login.png"));
         int windowsBefore=Window.getWindows().length;
@@ -23,7 +23,16 @@ public final class DesktopSmoke {
         click("register.back"); waitFor("login.submit");
         SwingUtilities.invokeAndWait(() -> {
             ((JTextField)find("login.username")).setText("admin");
-            ((JPasswordField)find("login.password")).setText("Admin123!");
+            ((JPasswordField)find("login.password")).setText("123456");
+            try {
+                LoginFrame frame = (LoginFrame) SwingUtilities.getWindowAncestor(find("login.captcha"));
+                var captchaField = LoginFrame.class.getDeclaredField("captcha");
+                captchaField.setAccessible(true);
+                Object challenge = captchaField.get(frame);
+                var answerField = challenge.getClass().getDeclaredField("answer");
+                answerField.setAccessible(true);
+                ((JTextField)find("login.captcha")).setText((String)answerField.get(challenge));
+            } catch (ReflectiveOperationException e) { throw new AssertionError(e); }
             ((JButton)find("login.submit")).doClick();
         });
         waitFor("nav.药材管理");
@@ -31,8 +40,8 @@ public final class DesktopSmoke {
         click("nav.药材管理"); Thread.sleep(700); capture(out.resolve("03-medicinals.png"));
         click("nav.智能问答"); Thread.sleep(500);
         SwingUtilities.invokeAndWait(() -> { ((JTextField)find("chat.question")).setText("黄芪的功效"); ((JButton)find("chat.send")).doClick(); });
-        Thread.sleep(1000);
-        SwingUtilities.invokeAndWait(() -> { if(!((JTextArea)find("chat.transcript")).getText().contains("补气升阳")) throw new AssertionError("问答未返回正确内容"); });
+        for(int i=0;i<500;i++){Thread.sleep(100);final boolean[] ready={false};SwingUtilities.invokeAndWait(()->ready[0]=((JButton)find("chat.send")).isEnabled());if(ready[0])break;}
+        SwingUtilities.invokeAndWait(() -> { if(!((JTextArea)find("chat.transcript")).getText().contains("你\n黄芪的功效")) throw new AssertionError("问答未返回内容"); });
         capture(out.resolve("04-chat.png"));
         click("nav.用户管理"); Thread.sleep(500); capture(out.resolve("05-users.png"));
         click("nav.个人资料"); Thread.sleep(300); capture(out.resolve("06-profile.png"));
@@ -49,8 +58,17 @@ public final class DesktopSmoke {
     private static Component findOrNull(String name) { for(Window w:Window.getWindows()) if(w.isShowing()) { Component c=search(w,name); if(c!=null) return c; } return null; }
     private static Component search(Component c,String name) { if(name.equals(c.getName())) return c; if(c instanceof Container ct) for(Component child:ct.getComponents()){ Component r=search(child,name); if(r!=null) return r; } return null; }
     private static void capture(Path path) throws Exception {
-        final Rectangle[] bounds={null}; SwingUtilities.invokeAndWait(() -> { for(Window w:Window.getWindows()) if(w.isShowing() && w instanceof JFrame) bounds[0]=w.getBounds(); });
-        if(bounds[0]==null) throw new AssertionError("窗口未显示");
-        BufferedImage img=new Robot().createScreenCapture(bounds[0]); ImageIO.write(img,"png",path.toFile());
+        final BufferedImage[] rendered={null};
+        SwingUtilities.invokeAndWait(() -> {
+            for(Window w:Window.getWindows()) if(w.isShowing() && w instanceof JFrame frame) {
+                JRootPane pane=frame.getRootPane();
+                BufferedImage img=new BufferedImage(pane.getWidth(),pane.getHeight(),BufferedImage.TYPE_INT_RGB);
+                Graphics2D graphics=img.createGraphics();
+                try { pane.printAll(graphics); } finally { graphics.dispose(); }
+                rendered[0]=img;
+            }
+        });
+        if(rendered[0]==null) throw new AssertionError("窗口未显示");
+        ImageIO.write(rendered[0],"png",path.toFile());
     }
 }

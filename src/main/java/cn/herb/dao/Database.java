@@ -11,16 +11,32 @@ public final class Database {
     public Connection connect() throws SQLException { return DriverManager.getConnection(url,username,password); }
     public boolean mysql() { return url.startsWith("jdbc:mysql:"); }
     public void initialize() {
+        String answerType = mysql() ? "LONGTEXT" : "CLOB";
         String[] ddl = {
             "CREATE TABLE IF NOT EXISTS app_user (id BIGINT AUTO_INCREMENT PRIMARY KEY, username VARCHAR(32) NOT NULL UNIQUE, email VARCHAR(254), password_hash VARCHAR(32) NOT NULL, display_name VARCHAR(50) NOT NULL, role VARCHAR(20) NOT NULL)",
             "CREATE TABLE IF NOT EXISTS medicinal (id BIGINT AUTO_INCREMENT PRIMARY KEY, code VARCHAR(32) NOT NULL UNIQUE, name VARCHAR(50) NOT NULL, category VARCHAR(30) NOT NULL, origin VARCHAR(80) NOT NULL, stock INT NOT NULL, price DECIMAL(12,2) NOT NULL, efficacy VARCHAR(1000) NOT NULL, usage_text VARCHAR(1000) NOT NULL, storage VARCHAR(200) NOT NULL, threshold_qty INT NOT NULL)",
             "CREATE TABLE IF NOT EXISTS login_log (id BIGINT AUTO_INCREMENT PRIMARY KEY, username VARCHAR(32) NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
-            "CREATE TABLE IF NOT EXISTS chat_history (id BIGINT AUTO_INCREMENT PRIMARY KEY, user_id BIGINT NOT NULL, question VARCHAR(500) NOT NULL, answer VARCHAR(4000) NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES app_user(id) ON DELETE CASCADE)",
+            "CREATE TABLE IF NOT EXISTS chat_history (id BIGINT AUTO_INCREMENT PRIMARY KEY, user_id BIGINT NOT NULL, question VARCHAR(500) NOT NULL, answer " + answerType + " NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES app_user(id) ON DELETE CASCADE)",
             "CREATE TABLE IF NOT EXISTS stock_log (id BIGINT AUTO_INCREMENT PRIMARY KEY, medicinal_code VARCHAR(32) NOT NULL, medicinal_name VARCHAR(50) NOT NULL, quantity_change INT NOT NULL, remaining INT NOT NULL, operator_name VARCHAR(32) NOT NULL, note VARCHAR(200) NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
         };
         try (Connection c = connect(); Statement s = c.createStatement()) { for(String sql : ddl) s.execute(sql); }
         catch (SQLException e) { throw JdbcDao.failure(e); }
         ensureUserEmailColumn();
+        ensureChatAnswerColumn();
+    }
+    /** 兼容旧库的 VARCHAR(4000)，升级时保留完整历史，重复启动无需重复改表。 */
+    private void ensureChatAnswerColumn() {
+        try (Connection c = connect(); Statement s = c.createStatement()) {
+            boolean upgraded;
+            try (ResultSet rs = s.executeQuery("SELECT answer FROM chat_history WHERE 1=0")) {
+                ResultSetMetaData metadata = rs.getMetaData();
+                upgraded = mysql() ? "LONGTEXT".equalsIgnoreCase(metadata.getColumnTypeName(1))
+                        : metadata.getColumnType(1) == Types.CLOB;
+            }
+            if (!upgraded) s.executeUpdate(mysql()
+                    ? "ALTER TABLE chat_history MODIFY COLUMN answer LONGTEXT NOT NULL"
+                    : "ALTER TABLE chat_history ALTER COLUMN answer CLOB NOT NULL");
+        } catch (SQLException e) { throw JdbcDao.failure(e); }
     }
     private void ensureUserEmailColumn() {
         try (Connection c=connect(); Statement s=c.createStatement()) {

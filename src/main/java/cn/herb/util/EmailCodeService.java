@@ -26,7 +26,7 @@ public final class EmailCodeService {
         Instant now=Instant.now(); Code previous=codes.get(key);
         if(previous!=null && Duration.between(previous.sentAt(),now).compareTo(SEND_INTERVAL)<0) throw new IllegalArgumentException("验证码发送过于频繁，请稍后再试");
         String value=String.format("%06d",random.nextInt(1_000_000));
-        Properties props=new Properties();props.put("mail.smtp.host",host);props.put("mail.smtp.port",port);props.put("mail.smtp.auth","true");props.put("mail.smtp.ssl.enable","465".equals(port));props.put("mail.smtp.starttls.enable","587".equals(port));
+        Properties props=new Properties();props.put("mail.smtp.host",host);props.put("mail.smtp.port",port);props.put("mail.smtp.auth","true");props.put("mail.smtp.ssl.enable","465".equals(port));props.put("mail.smtp.starttls.enable","587".equals(port));props.put("mail.smtp.connectiontimeout","10000");props.put("mail.smtp.timeout","20000");props.put("mail.smtp.writetimeout","20000");
         Session session=Session.getInstance(props,new Authenticator(){@Override protected PasswordAuthentication getPasswordAuthentication(){return new PasswordAuthentication(username,password);}});
         try {
             Message message=new MimeMessage(session);message.setFrom(new InternetAddress(username));message.setRecipients(Message.RecipientType.TO,InternetAddress.parse(recipient));message.setSubject("本草管理平台注册验证码");message.setText("你的注册验证码是："+value+"\n\n验证码 5 分钟内有效，请勿转发给他人。");Transport.send(message);codes.put(key,new Code(value,now));
