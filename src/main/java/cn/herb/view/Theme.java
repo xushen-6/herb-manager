@@ -6,6 +6,7 @@ import javax.swing.*;
 import javax.swing.border.AbstractBorder;
 import javax.swing.border.CompoundBorder;
 import javax.swing.border.EmptyBorder;
+import javax.swing.plaf.basic.BasicScrollBarUI;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
@@ -49,7 +50,12 @@ public final class Theme {
         UIManager.put("Table.selectionBackground", new Color(224, 237, 227));
         UIManager.put("Table.selectionForeground", INK);
         UIManager.put("TextField.selectionBackground", new Color(198, 222, 203));
-        UIManager.put("ScrollBar.width", 11);
+        UIManager.put("ScrollBar.width", 10);
+        UIManager.put("ScrollBar.thumb", new Color(184, 202, 188));
+        UIManager.put("ScrollBar.thumbDarkShadow", new Color(184, 202, 188));
+        UIManager.put("ScrollBar.thumbHighlight", new Color(184, 202, 188));
+        UIManager.put("ScrollBar.track", new Color(242, 247, 242));
+        UIManager.put("ScrollBar.trackHighlight", new Color(242, 247, 242));
         UIManager.put("PopupMenu.background", SURFACE);
         UIManager.put("MenuItem.background", SURFACE);
         UIManager.put("MenuItem.selectionBackground", GREEN_TINT);
@@ -202,6 +208,7 @@ public final class Theme {
         scroll.setOpaque(false);
         scroll.getViewport().setBackground(SURFACE);
         scroll.getViewport().setOpaque(true);
+        styleScrollBars(scroll, false);
         scroll.getVerticalScrollBar().setUnitIncrement(20);
         scroll.getHorizontalScrollBar().setUnitIncrement(20);
         return scroll;
@@ -213,8 +220,24 @@ public final class Theme {
         scroll.setOpaque(false);
         scroll.getViewport().setBackground(BG);
         scroll.getViewport().setOpaque(true);
+        styleScrollBars(scroll, true);
         scroll.getVerticalScrollBar().setUnitIncrement(22);
         return scroll;
+    }
+
+    /** 统一使用轻量圆角滚动条，避免 Swing 默认金属风格破坏卡片的视觉层次。 */
+    public static void styleScrollBars(JScrollPane scroll, boolean outer) {
+        if (scroll == null) return;
+        installScrollBar(scroll.getVerticalScrollBar(), outer);
+        installScrollBar(scroll.getHorizontalScrollBar(), outer);
+    }
+
+    private static void installScrollBar(JScrollBar bar, boolean outer) {
+        bar.setOpaque(false);
+        bar.setBorder(null);
+        bar.setPreferredSize(new Dimension(outer ? 9 : 8, outer ? 9 : 8));
+        bar.setUnitIncrement(18);
+        bar.setUI(new SoftScrollBarUI(outer));
     }
 
     public static JPanel card() {
@@ -312,6 +335,52 @@ public final class Theme {
         @Override public void doLayout() {
             applyWidth(getWidth());
             super.doLayout();
+        }
+    }
+
+    private static final class SoftScrollBarUI extends BasicScrollBarUI {
+        private final boolean outer;
+
+        private SoftScrollBarUI(boolean outer) {
+            this.outer = outer;
+        }
+
+        @Override protected void configureScrollBarColors() {
+            thumbColor = outer ? new Color(171, 196, 177) : new Color(188, 207, 193);
+            trackColor = outer ? new Color(238, 245, 239) : new Color(247, 250, 247);
+        }
+
+        @Override protected JButton createDecreaseButton(int orientation) { return invisibleButton(); }
+        @Override protected JButton createIncreaseButton(int orientation) { return invisibleButton(); }
+
+        @Override protected void paintTrack(Graphics graphics, JComponent component, Rectangle bounds) {
+            Graphics2D g = (Graphics2D) graphics.create();
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setColor(trackColor);
+            int inset = outer ? 2 : 1;
+            g.fillRoundRect(bounds.x + inset, bounds.y + inset, Math.max(1, bounds.width - inset * 2), Math.max(1, bounds.height - inset * 2), 8, 8);
+            g.dispose();
+        }
+
+        @Override protected void paintThumb(Graphics graphics, JComponent component, Rectangle bounds) {
+            if (!component.isEnabled() || bounds.width <= 0 || bounds.height <= 0) return;
+            Graphics2D g = (Graphics2D) graphics.create();
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setColor(thumbColor);
+            int inset = 2;
+            g.fillRoundRect(bounds.x + inset, bounds.y + inset, Math.max(4, bounds.width - inset * 2), Math.max(4, bounds.height - inset * 2), 8, 8);
+            g.dispose();
+        }
+
+        private JButton invisibleButton() {
+            JButton button = new JButton();
+            button.setPreferredSize(new Dimension(0, 0));
+            button.setMinimumSize(new Dimension(0, 0));
+            button.setMaximumSize(new Dimension(0, 0));
+            button.setOpaque(false);
+            button.setContentAreaFilled(false);
+            button.setBorderPainted(false);
+            return button;
         }
     }
 

@@ -114,6 +114,7 @@ public final class HerbChartPanel extends JPanel {
         card.setAlignmentX(LEFT_ALIGNMENT);
         card.setLayout(new BorderLayout(0, 8));
         card.setBorder(new EmptyBorder(16, 18, 16, 18));
+        card.setMinimumSize(new Dimension(0, canvas.chartHeight + 82));
         JPanel heading = Theme.stack(3);
         heading.add(Theme.label(title, 17, Theme.GREEN));
         heading.add(Theme.label(subtitle, 12, Theme.MUTED));
@@ -122,6 +123,7 @@ public final class HerbChartPanel extends JPanel {
         scroll.setBorder(null);
         scroll.setOpaque(false);
         scroll.getViewport().setOpaque(false);
+        Theme.styleScrollBars(scroll, false);
         card.add(scroll, BorderLayout.CENTER);
         return card;
     }
@@ -194,6 +196,10 @@ public final class HerbChartPanel extends JPanel {
         });
         JScrollPane scroll = new JScrollPane(picker);
         scroll.setBorder(BorderFactory.createLineBorder(Theme.LINE));
+        scroll.setOpaque(false);
+        scroll.getViewport().setBackground(Theme.SURFACE);
+        scroll.getViewport().setOpaque(true);
+        Theme.styleScrollBars(scroll, false);
         side.add(scroll, BorderLayout.CENTER);
         return side;
     }
@@ -206,6 +212,7 @@ public final class HerbChartPanel extends JPanel {
         content.add(favoriteTags, BorderLayout.NORTH);
         JScrollPane chartScroll = new JScrollPane(compare, ScrollPaneConstants.VERTICAL_SCROLLBAR_NEVER, ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
         chartScroll.setBorder(null); chartScroll.setOpaque(false); chartScroll.getViewport().setOpaque(false);
+        Theme.styleScrollBars(chartScroll, false);
         content.add(chartScroll, BorderLayout.CENTER);
         JScrollPane tableScroll = Theme.scroll(compareTable);
         tableScroll.setPreferredSize(new Dimension(620, 180));
@@ -355,25 +362,123 @@ public final class HerbChartPanel extends JPanel {
     private static String signed(double n) { return String.format(Locale.ROOT, "%s%.1f%%", n >= 0 ? "+" : "", n); }
     private static String shortName(String s) { return s.length() > 7 ? s.substring(0, 6) + "…" : s; }
 
-    private abstract class Chart extends JPanel {
+    private abstract class Chart extends JPanel implements Scrollable {
         private int hover = -1;
         private final int chartHeight;
         Chart(int h) { chartHeight = h; setOpaque(false); setPreferredSize(new Dimension(900, h)); setMinimumSize(new Dimension(0, h)); setToolTipText("");
-            addMouseMotionListener(new MouseMotionAdapter() { public void mouseMoved(MouseEvent e) { int n = hit(e.getX()); if (n != hover) { hover = n; repaint(); } } });
+            addMouseMotionListener(new MouseMotionAdapter() { public void mouseMoved(MouseEvent e) { int n = hit(e); if (n != hover) { hover = n; repaint(); } } });
             addMouseListener(new MouseAdapter() { public void mouseExited(MouseEvent e) { hover = -1; repaint(); } }); }
         int hover() { return hover; }
+        int hit(MouseEvent e) { return hit(e.getX()); }
         abstract int hit(int x);
         abstract String tip(int i);
-        public String getToolTipText(MouseEvent e) { int i = hit(e.getX()); return i < 0 ? null : tip(i); }
+        public String getToolTipText(MouseEvent e) { int i = hit(e); return i < 0 ? null : tip(i); }
+        @Override public Dimension getPreferredScrollableViewportSize() { return new Dimension(900, chartHeight); }
+        @Override public int getScrollableUnitIncrement(Rectangle visibleRect, int orientation, int direction) { return orientation == SwingConstants.HORIZONTAL ? 18 : 22; }
+        @Override public int getScrollableBlockIncrement(Rectangle visibleRect, int orientation, int direction) { return orientation == SwingConstants.HORIZONTAL ? Math.max(40, visibleRect.width - 18) : Math.max(40, visibleRect.height - 22); }
+        @Override public boolean getScrollableTracksViewportWidth() { return true; }
+        @Override public boolean getScrollableTracksViewportHeight() { return false; }
         Graphics2D g(Graphics x) { Graphics2D g = (Graphics2D) x.create(); g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON); g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON); return g; }
-        void axes(Graphics2D g, int l, int t, int r, int b, double max, String unit) { g.setFont(Theme.BODY.deriveFont(10f)); for (int i=0;i<=4;i++) { int y=b-(b-t)*i/4; g.setColor(i==0?Theme.MUTED:new Color(220,230,222)); g.drawLine(l,y,r,y); g.setColor(Theme.MUTED); g.drawString(String.format(Locale.ROOT,"%.0f%s", max*i/4,unit), 5,y+4); } g.setColor(Theme.LINE); g.drawLine(l,t,l,b); g.drawLine(l,b,r,b); }
+        void axes(Graphics2D g, int l, int t, int r, int b, double min, double max, String unit) {
+            if (max <= min) max = min + 1;
+            g.setFont(Theme.BODY.deriveFont(10f));
+            for (int i = 0; i <= 4; i++) {
+                double value = max - (max - min) * i / 4d;
+                int y = b - (b - t) * i / 4;
+                g.setColor(new Color(220, 230, 222));
+                g.drawLine(l, y, r, y);
+                g.setColor(Theme.MUTED);
+                g.drawString(String.format(Locale.ROOT, "%.0f%s", value, unit), 5, y + 4);
+            }
+            if (min < 0 && max > 0) {
+                int zeroY = yFor(0, min, max, t, b);
+                Stroke previous = g.getStroke();
+                g.setColor(new Color(124, 150, 132));
+                g.setStroke(new BasicStroke(1.3f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_ROUND, 1f, new float[]{6f, 4f}, 0f));
+                g.drawLine(l, zeroY, r, zeroY);
+                g.setStroke(previous);
+                g.setColor(Theme.GREEN_DARK);
+                g.drawString("0" + unit, 5, zeroY + 4);
+            }
+            g.setColor(Theme.LINE);
+            g.drawLine(l, t, l, b);
+            g.drawLine(l, b, r, b);
+        }
+        int yFor(double value, double min, double max, int t, int b) {
+            return b - (int) Math.round((Math.max(min, Math.min(max, value)) - min) / Math.max(0.0001, max - min) * (b - t));
+        }
+        void point(Graphics2D g, int x, int y, Color color, boolean active) {
+            if (active) {
+                g.setColor(new Color(color.getRed(), color.getGreen(), color.getBlue(), 38));
+                g.fillOval(x - 11, y - 11, 22, 22);
+                g.setColor(Color.WHITE);
+                g.fillOval(x - 7, y - 7, 14, 14);
+                g.setColor(color);
+                g.setStroke(new BasicStroke(2f));
+                g.drawOval(x - 8, y - 8, 16, 16);
+                g.fillOval(x - 4, y - 4, 8, 8);
+            } else {
+                g.setColor(color);
+                g.fillOval(x - 5, y - 5, 10, 10);
+            }
+        }
         void legend(Graphics2D g, int x, int y, String[] names, Color[] colors) { g.setFont(Theme.BODY.deriveFont(11f)); for(int i=0;i<names.length;i++){g.setColor(colors[i]);g.fillOval(x,y-8,10,10);g.setColor(Theme.MUTED);g.drawString(names[i],x+15,y+1);x+=g.getFontMetrics().stringWidth(names[i])+34;} }
         void tooltip(Graphics2D g,int x,int t,int b,String text){if(text==null)return;String[] ls=text.split("\\n");g.setFont(Theme.BODY.deriveFont(11f));int w=20;for(String s:ls)w=Math.max(w,g.getFontMetrics().stringWidth(s)+20);int h=14+ls.length*16;int bx=Math.min(Math.max(4,x+10),Math.max(4,getWidth()-w-4));int by=Math.max(t+4,Math.min(b-h,t+16));g.setColor(new Color(255,255,255,245));g.fillRoundRect(bx,by,w,h,10,10);g.setColor(Theme.GREEN);g.drawRoundRect(bx,by,w,h,10,10);g.setColor(Theme.INK);for(int i=0;i<ls.length;i++)g.drawString(ls[i],bx+10,by+17+i*16);}
     }
 
     private final class TrendCanvas extends Chart {
         TrendCanvas(){super(360);}
-        protected void paintComponent(Graphics x){super.paintComponent(x);Graphics2D g=g(x);List<Summary> data=visible(summaries());int l=64,t=56,r=getWidth()-30,b=getHeight()-74;double max=nice(data.stream().mapToDouble(s->Math.abs(s.change())).max().orElse(1));axes(g,l,t,r,b,max,"%");legend(g,l,28,new String[]{"日变化","周变化","月变化"},new Color[]{Theme.GREEN,Theme.ACCENT,new Color(104,135,176)});String[] labels={DAILY,WEEKLY,MONTHLY};Color[] colors={Theme.GREEN,Theme.ACCENT,new Color(104,135,176)};for(int q=0;q<3;q++){g.setColor(colors[q]);g.setStroke(new BasicStroke(3f));Point prev=null;for(int i=0;i<data.size();i++){Summary base=data.get(i);double v=changeFor(base.name(),labels[q]);int xx=l+(r-l)*i/Math.max(1,data.size()-1);int yy=(t+b)/2-(int)(v/max*(b-t)/2*phase(.05,.78));if(prev!=null)g.drawLine(prev.x,prev.y,xx,yy);g.fillOval(xx-5,yy-5,10,10);prev=new Point(xx,yy);} }g.setColor(Theme.MUTED);g.setFont(Theme.BODY.deriveFont(10f));for(int i=0;i<data.size();i++){int xx=l+(r-l)*i/Math.max(1,data.size()-1);String n=shortName(data.get(i).name());g.drawString(n,xx-g.getFontMetrics().stringWidth(n)/2,b+22);}if(hover()>=0&&hover()<data.size())tooltip(g,l+(r-l)*hover()/Math.max(1,data.size()-1),t,b,trendTip(data.get(hover())));g.dispose();}
+        protected void paintComponent(Graphics x){
+            super.paintComponent(x);
+            Graphics2D g=g(x);
+            List<Summary> data=visible(summaries());
+            int l=64,t=56,r=Math.max(l+1,getWidth()-30),b=getHeight()-74;
+            double[] bounds=trendBounds(data);
+            double min=bounds[0], max=bounds[1];
+            axes(g,l,t,r,b,min,max,"%");
+            legend(g,l,28,new String[]{"日变化","周变化","月变化"},new Color[]{Theme.GREEN,Theme.ACCENT,new Color(104,135,176)});
+            String[] labels={DAILY,WEEKLY,MONTHLY};
+            Color[] colors={Theme.GREEN,Theme.ACCENT,new Color(104,135,176)};
+            for(int q=0;q<3;q++){
+                g.setColor(colors[q]);
+                g.setStroke(new BasicStroke(3f,BasicStroke.CAP_ROUND,BasicStroke.JOIN_ROUND));
+                Point prev=null;
+                for(int i=0;i<data.size();i++){
+                    Summary base=data.get(i);
+                    double v=changeFor(base.name(),labels[q]);
+                    int xx=pointX(i,data.size(),l,r);
+                    int yy=yFor(v,min,max,t,b);
+                    if(prev!=null)g.drawLine(prev.x,prev.y,xx,yy);
+                    point(g,xx,yy,colors[q],hover()==i);
+                    prev=new Point(xx,yy);
+                }
+            }
+            g.setColor(Theme.MUTED);
+            g.setFont(Theme.BODY.deriveFont(10f));
+            for(int i=0;i<data.size();i++){
+                int xx=pointX(i,data.size(),l,r);
+                String n=shortName(data.get(i).name());
+                g.drawString(n,xx-g.getFontMetrics().stringWidth(n)/2,b+22);
+            }
+            if(hover()>=0&&hover()<data.size()){
+                int xx=pointX(hover(),data.size(),l,r);
+                tooltip(g,xx,t,b,trendTip(data.get(hover())));
+            }
+            g.dispose();
+        }
+        private double[] trendBounds(List<Summary> data){
+            if(data.isEmpty())return new double[]{-1,1};
+            double low=Double.POSITIVE_INFINITY, high=Double.NEGATIVE_INFINITY;
+            String[] labels={DAILY,WEEKLY,MONTHLY};
+            for(Summary s:data)for(String label:labels){double v=changeFor(s.name(),label);low=Math.min(low,v);high=Math.max(high,v);}
+            if(!Double.isFinite(low)||!Double.isFinite(high))return new double[]{-1,1};
+            double span=Math.max(1,high-low);
+            if(low>=0){low=-Math.max(1,span*.12);high+=Math.max(1,span*.12);}
+            else if(high<=0){high=Math.max(1,span*.12);low-=Math.max(1,span*.12);}
+            else{low-=span*.10;high+=span*.10;}
+            return new double[]{low,high};
+        }
+        private int pointX(int index,int count,int left,int right){return count<=1?(left+right)/2:left+(right-left)*index/(count-1);}
         private String trendTip(Summary s){return "药材："+s.name()+"\n日变化："+percent(changeFor(s.name(),DAILY))+"\n周变化："+percent(changeFor(s.name(),WEEKLY))+"\n月变化："+percent(changeFor(s.name(),MONTHLY));}
         int hit(int x){List<Summary>d=visible(summaries());return d.isEmpty()?-1:Math.max(0,Math.min(d.size()-1,Math.round((x-64)*(d.size()-1f)/Math.max(1,getWidth()-94))));}
         String tip(int i){List<Summary>d=visible(summaries());return i<0||i>=d.size()?null:trendTip(d.get(i));}
@@ -381,14 +486,44 @@ public final class HerbChartPanel extends JPanel {
 
     private final class PredictionCanvas extends Chart {
         PredictionCanvas(){super(340);}
-        protected void paintComponent(Graphics x){super.paintComponent(x);Graphics2D g=g(x);List<Summary>d=visible(summaries());int l=64,t=54,r=getWidth()-30,b=getHeight()-76;double max=Math.max(120,nice(d.stream().mapToDouble(Summary::prediction).max().orElse(100)));axes(g,l,t,r,b,max,"%");legend(g,l,27,new String[]{"达标","低于基准"},new Color[]{Theme.GREEN,Theme.ACCENT});int slot=Math.max(45,(r-l)/Math.max(1,d.size()));for(int i=0;i<d.size();i++){Summary s=d.get(i);int xx=l+slot*i+slot/2;int h=(int)((b-t)*s.prediction()/max*phase(.08,.82));int y=b-h;g.setPaint(new GradientPaint(0,y,s.prediction()>=100?new Color(105,177,125):new Color(220,169,96),0,b,s.prediction()>=100?Theme.GREEN:new Color(166,105,45)));g.fill(new RoundRectangle2D.Double(xx-20,y,40,h,10,10));g.setColor(Theme.MUTED);String n=shortName(s.name());g.setFont(Theme.BODY.deriveFont(10f));g.drawString(n,xx-g.getFontMetrics().stringWidth(n)/2,b+22);if(hover()==i)tooltip(g,xx,t,b,"药材："+s.name()+"\n完成率："+percent(s.prediction())+"\n状态："+s.status());}g.dispose();}
-        int hit(int x){List<Summary>d=visible(summaries());int slot=Math.max(45,(getWidth()-94)/Math.max(1,d.size()));return d.isEmpty()?-1:Math.max(0,Math.min(d.size()-1,(x-64-slot/2)/slot));}
+        protected void paintComponent(Graphics x){
+            super.paintComponent(x);
+            Graphics2D g=g(x);
+            List<Summary>d=visible(summaries());
+            int l=64,t=54,r=Math.max(l+1,getWidth()-30),b=getHeight()-76;
+            double max=Math.max(120,nice(d.stream().mapToDouble(Summary::prediction).max().orElse(100)));
+            axes(g,l,t,r,b,0,max,"%");
+            legend(g,l,27,new String[]{"达标","低于基准"},new Color[]{Theme.GREEN,Theme.ACCENT});
+            double band=(r-l)/Math.max(1d,d.size());
+            int barWidth=(int)Math.max(22,Math.min(56,band*.68));
+            for(int i=0;i<d.size();i++){
+                Summary s=d.get(i);
+                int xx=l+(int)Math.round(band*(i+.5));
+                int h=(int)((b-t)*s.prediction()/max*phase(.08,.82));
+                int y=b-h;
+                Color top=s.prediction()>=100?new Color(105,177,125):new Color(220,169,96);
+                Color bottom=s.prediction()>=100?Theme.GREEN:new Color(166,105,45);
+                g.setPaint(new GradientPaint(0,y,top,0,b,bottom));
+                g.fill(new RoundRectangle2D.Double(xx-barWidth/2,y,barWidth,h,10,10));
+                if(hover()==i){
+                    g.setColor(new Color(bottom.getRed(),bottom.getGreen(),bottom.getBlue(),48));
+                    g.fillRoundRect(xx-barWidth/2-5,Math.max(t,y-5),barWidth+10,Math.max(10,h+5),12,12);
+                    tooltip(g,xx,t,b,"药材："+s.name()+"\n完成率："+percent(s.prediction())+"\n状态："+s.status());
+                }
+                g.setColor(Theme.MUTED);
+                String n=shortName(s.name());
+                g.setFont(Theme.BODY.deriveFont(10f));
+                g.drawString(n,xx-g.getFontMetrics().stringWidth(n)/2,b+22);
+            }
+            g.dispose();
+        }
+        int hit(int x){List<Summary>d=visible(summaries());if(d.isEmpty())return -1;double band=(getWidth()-94)/Math.max(1d,d.size());return Math.max(0,Math.min(d.size()-1,(int)((x-64)/Math.max(1,band))));}
         String tip(int i){List<Summary>d=visible(summaries());return i<0||i>=d.size()?null:"药材："+d.get(i).name()+"\n完成率："+percent(d.get(i).prediction());}
     }
 
     private final class DistributionCanvas extends Chart {
         private final boolean confidenceMode;
-        DistributionCanvas(boolean c){super(190);confidenceMode=c;setPreferredSize(new Dimension(460,190));}
+        DistributionCanvas(boolean c){super(190);confidenceMode=c;setPreferredSize(new Dimension(0,190));setMinimumSize(new Dimension(0,190));}
         protected void paintComponent(Graphics x){super.paintComponent(x);Graphics2D g=g(x);List<Segment>s=segments();int l=28,r=getWidth()-24,y=62,h=38;int total=Math.max(1,herbs.size()), cursor=l;legend(g,l,30,s.stream().map(Segment::name).toArray(String[]::new),s.stream().map(Segment::color).toArray(Color[]::new));for(Segment a:s){int w=(r-l)*a.value()/total;int draw=(int)(w*phase(.2,.76));g.setPaint(new GradientPaint(0,y,a.color().brighter(),0,y+h,a.color().darker()));g.fillRoundRect(cursor,y,draw,h,12,12);if(draw>45){g.setColor(Color.WHITE);g.setFont(Theme.BODY.deriveFont(Font.BOLD,11f));g.drawString(a.name()+" "+a.value(),cursor+8,y+24);}cursor+=w;}g.setColor(Theme.MUTED);g.setFont(Theme.BODY.deriveFont(11f));g.drawString("共 "+herbs.size()+" 种药材",l,y+h+28);if(hover()>=0)tooltip(g,l+80,y,y+h,s.stream().map(a->a.name()+"："+a.value()+" 种").collect(Collectors.joining("\\n")));g.dispose();}
         List<Segment>segments(){if(!confidenceMode)return List.of(new Segment("推荐",(int)summaries().stream().filter(s->s.prediction()>=100).count(),Theme.GREEN),new Segment("谨慎",(int)summaries().stream().filter(s->s.prediction()<100).count(),Theme.ACCENT));return List.of(new Segment("高",(int)summaries().stream().filter(s->s.confidence().equals("高")).count(),Theme.GREEN),new Segment("中",(int)summaries().stream().filter(s->s.confidence().equals("中")).count(),new Color(123,159,107)),new Segment("低",(int)summaries().stream().filter(s->s.confidence().equals("低")).count(),Theme.ACCENT));}
         int hit(int x){return x>=28&&x<=getWidth()-24?0:-1;}
@@ -397,7 +532,7 @@ public final class HerbChartPanel extends JPanel {
 
     private final class CompareCanvas extends Chart {
         CompareCanvas(){super(390);}
-        protected void paintComponent(Graphics x){super.paintComponent(x);Graphics2D g=g(x);List<Summary>d=favoriteSummaries();int l=64,t=62,r=getWidth()-54,b=getHeight()-72;double max=Math.max(100,nice(d.stream().mapToDouble(s->Math.max(s.prediction(),s.historyProbability())).max().orElse(100)));axes(g,l,t,r,b,max,"%");legend(g,l,29,new String[]{"库存达标率","历史上涨概率","平均变化"},new Color[]{Theme.GREEN,Theme.ACCENT,new Color(104,135,176)});int slot=Math.max(100,(r-l)/Math.max(1,d.size()));List<Point>line=new ArrayList<>();for(int i=0;i<d.size();i++){Summary s=d.get(i);int xx=l+slot*i+slot/2;bar(g,xx-28,s.prediction(),max,b,t,22,Theme.GREEN);bar(g,xx+4,s.historyProbability(),max,b,t,22,Theme.ACCENT);int yy=(t+b)/2-(int)(s.change()/Math.max(10,max)*((b-t)/2)*phase(.18,.84));line.add(new Point(xx,yy));g.setColor(Theme.MUTED);g.setFont(Theme.BODY.deriveFont(10f));String n=shortName(s.name());g.drawString(n,xx-g.getFontMetrics().stringWidth(n)/2,b+22);g.drawString(s.code(),xx-g.getFontMetrics().stringWidth(s.code())/2,b+38);}g.setColor(new Color(104,135,176));g.setStroke(new BasicStroke(3f));for(int i=1;i<line.size();i++)g.drawLine(line.get(i-1).x,line.get(i-1).y,line.get(i).x,line.get(i).y);for(Point p:line)g.fillOval(p.x-5,p.y-5,10,10);if(hover()>=0&&hover()<d.size())tooltip(g,line.get(hover()).x,t,b,"药材："+d.get(hover()).name()+"\n库存达标率："+percent(d.get(hover()).prediction())+"\n历史上涨概率："+percent(d.get(hover()).historyProbability())+"\n平均变化："+percent(d.get(hover()).change()));g.dispose();}
+        protected void paintComponent(Graphics x){super.paintComponent(x);Graphics2D g=g(x);List<Summary>d=favoriteSummaries();int l=64,t=62,r=getWidth()-54,b=getHeight()-72;double max=Math.max(100,nice(d.stream().mapToDouble(s->Math.max(s.prediction(),s.historyProbability())).max().orElse(100)));axes(g,l,t,r,b,0,max,"%");legend(g,l,29,new String[]{"库存达标率","历史完成率","库存变化"},new Color[]{Theme.GREEN,Theme.ACCENT,new Color(104,135,176)});int slot=Math.max(100,(r-l)/Math.max(1,d.size()));List<Point>line=new ArrayList<>();for(int i=0;i<d.size();i++){Summary s=d.get(i);int xx=l+slot*i+slot/2;bar(g,xx-28,s.prediction(),max,b,t,22,Theme.GREEN);bar(g,xx+4,s.historyProbability(),max,b,t,22,Theme.ACCENT);int yy=(t+b)/2-(int)(s.change()/Math.max(10,max)*((b-t)/2)*phase(.18,.84));line.add(new Point(xx,yy));g.setColor(Theme.MUTED);g.setFont(Theme.BODY.deriveFont(10f));String n=shortName(s.name());g.drawString(n,xx-g.getFontMetrics().stringWidth(n)/2,b+22);g.drawString(s.code(),xx-g.getFontMetrics().stringWidth(s.code())/2,b+38);}g.setColor(new Color(104,135,176));g.setStroke(new BasicStroke(3f));for(int i=1;i<line.size();i++)g.drawLine(line.get(i-1).x,line.get(i-1).y,line.get(i).x,line.get(i).y);for(int i=0;i<line.size();i++)point(g,line.get(i).x,line.get(i).y,new Color(104,135,176),hover()==i);if(hover()>=0&&hover()<d.size())tooltip(g,line.get(hover()).x,t,b,"药材："+d.get(hover()).name()+"\n库存达标率："+percent(d.get(hover()).prediction())+"\n历史完成率："+percent(d.get(hover()).historyProbability())+"\n库存变化："+percent(d.get(hover()).change()));g.dispose();}
         void bar(Graphics2D g,int x,double v,double max,int b,int t,int w,Color c){int h=(int)((b-t)*v/max*phase(.15,.8));g.setPaint(new GradientPaint(0,b-h,c.brighter(),0,b,c.darker()));g.fill(new RoundRectangle2D.Double(x,b-h,w,h,8,8));}
         int hit(int x){List<Summary>d=favoriteSummaries();int slot=Math.max(100,(getWidth()-118)/Math.max(1,d.size()));return d.isEmpty()?-1:Math.max(0,Math.min(d.size()-1,(x-64-slot/2)/slot));}
         String tip(int i){List<Summary>d=favoriteSummaries();return i<0||i>=d.size()?null:d.get(i).name();}

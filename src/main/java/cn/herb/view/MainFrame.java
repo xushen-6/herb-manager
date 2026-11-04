@@ -93,10 +93,14 @@ public final class MainFrame extends JFrame {
         topbar.add(navigationHost, BorderLayout.CENTER);
 
         account.setOpaque(false);
-        account.setBorder(new EmptyBorder(0, 16, 0, 32));
-        JPanel identityPanel = Theme.stack(2);
-        identityPanel.add(identity);
-        identityPanel.add(roleBadge);
+        account.setBorder(new EmptyBorder(0, 16, 0, 24));
+        JPanel identityPanel = new JPanel(new BorderLayout(10, 0));
+        identityPanel.setOpaque(false);
+        JPanel identityCopy = Theme.stack(1);
+        identityCopy.add(Theme.label("当前账号", 10, Theme.MUTED));
+        identityCopy.add(identity);
+        identityPanel.add(identityCopy, BorderLayout.CENTER);
+        identityPanel.add(roleBadge, BorderLayout.EAST);
         account.add(identityPanel);
         JButton logout = Theme.button("退出", false);
         logout.setName("nav.logout");
@@ -127,8 +131,11 @@ public final class MainFrame extends JFrame {
 
     private void updateIdentity() {
         identity.setText(user.displayName());
-        roleBadge.setText(user.role().toString());
+        identity.setToolTipText("登录账号：" + user.username());
+        roleBadge.setText("· " + user.role());
         roleBadge.setToolTipText("当前角色：" + user.role());
+        account.revalidate();
+        account.repaint();
     }
 
     private void addNav(String label, Runnable action) {
