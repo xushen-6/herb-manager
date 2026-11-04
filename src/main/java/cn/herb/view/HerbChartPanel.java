@@ -41,8 +41,6 @@ public final class HerbChartPanel extends JPanel {
 
     private final TrendCanvas trend = new TrendCanvas();
     private final PredictionCanvas prediction = new PredictionCanvas();
-    private final DistributionCanvas recommendation = new DistributionCanvas(false);
-    private final DistributionCanvas confidence = new DistributionCanvas(true);
 
     public HerbChartPanel() {
         super(new BorderLayout(0, 16));
@@ -59,7 +57,7 @@ public final class HerbChartPanel extends JPanel {
         root.setOpaque(false);
         JPanel title = Theme.stack(4);
         title.add(Theme.label("药材数据分析仪表盘", 24, Theme.GREEN));
-        title.add(Theme.label("单药材库存趋势、基准完成率与库存结构分析", 13, Theme.MUTED));
+        title.add(Theme.label("单药材库存趋势与基准完成率分析", 13, Theme.MUTED));
         root.add(title, BorderLayout.WEST);
 
         JPanel controls = Theme.row();
@@ -98,11 +96,6 @@ public final class HerbChartPanel extends JPanel {
                 "当前库存 / 药材基准 × 100%，绿色表示达到基准，金色表示需要补货", prediction));
         body.add(Box.createVerticalStrut(16));
 
-        Theme.ResponsiveGrid distributions = Theme.responsiveGrid(2, 2, 1, 14, 14);
-        distributions.setAlignmentX(LEFT_ALIGNMENT);
-        distributions.add(chartCard("库存状态分布", "当前库存达到预警基准的药材比例", recommendation));
-        distributions.add(chartCard("库存信心程度分布", "根据流水数量和历史正向变动估算数据稳定度", confidence));
-        body.add(distributions);
         return body;
     }
 
@@ -182,13 +175,10 @@ public final class HerbChartPanel extends JPanel {
         Medicinal selected = selectedHerb();
         Summary selectedSummary = selected == null ? null : summary(selected);
         long recommended = summaryCache.stream().filter(s -> s.prediction() >= 100).count();
-        long high = summaryCache.stream().filter(s -> s.confidence().equals("高")).count();
         cards.add(metric("药材池", String.valueOf(summaryCache.size()), "当前在册药材"));
         cards.add(metric("当前药材", selected == null ? "—" : selected.name(), "趋势图正在查看"));
         cards.add(metric("基准完成率", selectedSummary == null ? "—" : percent(selectedSummary.prediction()),
                 recommended + " 种达到库存基准"));
-        cards.add(metric("数据稳定度", selectedSummary == null ? "—" : selectedSummary.confidence(),
-                high + " 种药材有较充分流水"));
         cards.revalidate();
         cards.repaint();
     }
@@ -270,29 +260,9 @@ public final class HerbChartPanel extends JPanel {
     }
 
     private Summary summary(Medicinal herb) {
-        List<Event> period = periodEvents(herb);
-        int positive = (int) period.stream().filter(event -> event.delta() > 0).count();
-        double probability = period.isEmpty() ? 50 : positive * 100d / period.size();
-        double change = period.isEmpty() ? 0
-                : period.stream().mapToInt(Event::delta).sum() * 100d
-                / Math.max(1, period.get(0).remaining());
         double prediction = herb.stock() * 100d / Math.max(1, herb.threshold());
         String status = prediction >= 100 ? "达标" : prediction >= 60 ? "观察" : "待补货";
-        String confidence = period.size() >= 10 ? "高" : period.size() >= 3 ? "中" : "低";
-        return new Summary(herb.code(), herb.name(), herb.code(), change, probability,
-                prediction, status, confidence, period.size());
-    }
-
-    private List<Event> periodEvents(Medicinal herb) {
-        if (herb == null) return List.of();
-        List<Event> all = eventIndex.getOrDefault(eventKey(herb), List.of());
-        if (all.isEmpty()) return all;
-        long days = DAILY.equals(activePeriod) ? 1 : WEEKLY.equals(activePeriod) ? 7 : 30;
-        LocalDateTime end = all.get(all.size() - 1).time();
-        List<Event> filtered = all.stream()
-                .filter(event -> !event.time().isBefore(end.minusDays(days)))
-                .toList();
-        return filtered.isEmpty() ? List.of(all.get(all.size() - 1)) : filtered;
+        return new Summary(herb.code(), herb.name(), herb.code(), prediction, status);
     }
 
     private List<TrendPoint> trendPoints() {
@@ -659,64 +629,9 @@ public final class HerbChartPanel extends JPanel {
         }
     }
 
-    private final class DistributionCanvas extends Chart {
-        private final boolean confidenceMode;
-        DistributionCanvas(boolean confidenceMode) {
-            super(190);
-            this.confidenceMode = confidenceMode;
-            setPreferredSize(new Dimension(0, 190));
-            setMinimumSize(new Dimension(0, 190));
-        }
-
-        @Override protected void paintComponent(Graphics source) {
-            super.paintComponent(source);
-            Graphics2D g = graphics(source);
-            List<Segment> segments = segments();
-            int left = 28, right = Math.max(left + 1, getWidth() - 24), y = 62, height = 38;
-            int total = segments.stream().mapToInt(Segment::value).sum();
-            legend(g, left, 30, segments.stream().map(Segment::name).toArray(String[]::new),
-                    segments.stream().map(Segment::color).toArray(Color[]::new));
-            g.setColor(new Color(239, 245, 240));
-            g.fillRoundRect(left, y, right - left, height, 12, 12);
-            int cursor = left;
-            for (Segment segment : segments) {
-                int width = total == 0 ? 0 : (right - left) * segment.value() / total;
-                g.setColor(segment.color());
-                g.fillRoundRect(cursor, y, width, height, 12, 12);
-                if (width > 42) {
-                    g.setColor(Color.WHITE);
-                    g.setFont(Theme.BODY.deriveFont(Font.BOLD, 11f));
-                    g.drawString(segment.name() + " " + segment.value(), cursor + 8, y + 24);
-                }
-                cursor += width;
-            }
-            g.setColor(Theme.MUTED);
-            g.setFont(Theme.BODY.deriveFont(11f));
-            g.drawString("共 " + herbs.size() + " 种药材", left, y + height + 28);
-            if (hover() >= 0) tooltip(g, left + 70, y, y + height,
-                    segments.stream().map(segment -> segment.name() + "：" + segment.value() + " 种")
-                            .reduce((a, b) -> a + "\n" + b).orElse("暂无数据"));
-            g.dispose();
-        }
-
-        private List<Segment> segments() {
-            if (!confidenceMode) {
-                return List.of(new Segment("达到基准", (int) summaryCache.stream().filter(s -> s.prediction() >= 100).count(), Theme.GREEN),
-                        new Segment("低于基准", (int) summaryCache.stream().filter(s -> s.prediction() < 100).count(), Theme.ACCENT));
-            }
-            return List.of(new Segment("高", (int) summaryCache.stream().filter(s -> s.confidence().equals("高")).count(), Theme.GREEN),
-                    new Segment("中", (int) summaryCache.stream().filter(s -> s.confidence().equals("中")).count(), new Color(123, 159, 107)),
-                    new Segment("低", (int) summaryCache.stream().filter(s -> s.confidence().equals("低")).count(), Theme.ACCENT));
-        }
-        @Override int hit(int x) { return x >= 28 && x <= getWidth() - 24 ? 0 : -1; }
-        @Override String tip(int index) { return segments().toString(); }
-    }
-
     private void repaintAllCharts() {
         trend.repaint();
         prediction.repaint();
-        recommendation.repaint();
-        confidence.repaint();
     }
 
     private double relativeBoundsPadding(double span) { return Math.max(1, span * .12); }
@@ -756,7 +671,5 @@ public final class HerbChartPanel extends JPanel {
         private String key() { return code + "|" + name; }
     }
     private record TrendPoint(LocalDate date, int remaining, int delta) {}
-    private record Summary(String key, String name, String code, double change, double historyProbability,
-                           double prediction, String status, String confidence, int count) {}
-    private record Segment(String name, int value, Color color) {}
+    private record Summary(String key, String name, String code, double prediction, String status) {}
 }
