@@ -95,14 +95,18 @@ public final class MainFrame extends JFrame {
         account.setOpaque(false);
         account.setBorder(new EmptyBorder(0, 16, 0, 24));
         JPanel identityPanel = new JPanel(new BorderLayout(10, 0));
-        identityPanel.setOpaque(false);
+        identityPanel.setOpaque(true);
+        identityPanel.setBackground(Theme.GREEN_TINT);
+        identityPanel.setBorder(new javax.swing.border.CompoundBorder(
+                new javax.swing.border.LineBorder(new Color(205, 226, 208), 1, true),
+                new EmptyBorder(6, 11, 6, 11)));
         JPanel identityCopy = Theme.stack(1);
         identityCopy.add(Theme.label("当前账号", 10, Theme.MUTED));
         identityCopy.add(identity);
         identityPanel.add(identityCopy, BorderLayout.CENTER);
         identityPanel.add(roleBadge, BorderLayout.EAST);
         account.add(identityPanel);
-        JButton logout = Theme.button("退出", false);
+        JButton logout = Theme.button("退出登录", false);
         logout.setName("nav.logout");
         logout.setBorder(new EmptyBorder(8, 10, 8, 10));
         logout.addActionListener(event -> logout());
@@ -132,7 +136,7 @@ public final class MainFrame extends JFrame {
     private void updateIdentity() {
         identity.setText(user.displayName());
         identity.setToolTipText("登录账号：" + user.username());
-        roleBadge.setText("· " + user.role());
+        roleBadge.setText(user.role().toString());
         roleBadge.setToolTipText("当前角色：" + user.role());
         account.revalidate();
         account.repaint();
@@ -282,8 +286,14 @@ public final class MainFrame extends JFrame {
             Theme.rows(table, list.stream().map(m -> new Object[]{m.code(), m.name(), m.stock(), m.threshold(), String.format(java.util.Locale.ROOT,"%.1f%%",m.stock()*100d/Math.max(1,m.threshold())), m.lowStock()?"待补货":"库存达标"}).toList());
             stats.revalidate();
             stats.repaint();
-            if (user.role().canEdit()) Tasks.run(this, null, () -> platform.stockLogs(user), rows -> charts.setData(list, rows));
-            else charts.setData(list, java.util.List.of());
+            // 先用药材档案立即绘制趋势、柱状图和两张分布图；流水在后台补齐，
+            // 避免等待 stock_log 查询完成后整块图表才出现。
+            charts.setData(list, java.util.List.of());
+            if (user.role().canEdit()) {
+                Tasks.run(this, null, () -> platform.stockLogs(user), rows -> {
+                    if (page.isShowing()) charts.setData(list, rows);
+                });
+            }
         });
     }
 
