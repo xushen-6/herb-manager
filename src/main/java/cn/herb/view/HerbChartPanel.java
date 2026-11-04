@@ -30,7 +30,8 @@ public final class HerbChartPanel extends JPanel {
 
     private List<Medicinal> herbs = List.of();
     private List<Event> events = List.of();
-    private final LinkedHashSet<String> favorites = new LinkedHashSet<>();
+    private boolean demoEvents;
+    private final LinkedHashSet<String> selectedHerbs = new LinkedHashSet<>();
     private String activePeriod = DAILY;
     private double progress = 1;
     private boolean loading;
@@ -42,7 +43,7 @@ public final class HerbChartPanel extends JPanel {
     private final DefaultListModel<Medicinal> pickerModel = new DefaultListModel<>();
     private final JList<Medicinal> picker = new JList<>(pickerModel);
     private final JPanel favoriteTags = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
-    private final JTable compareTable = Theme.table("药材", "编号", "变化", "历史上涨概率", "库存达标率", "推荐状态", "信心");
+    private final JTable compareTable = Theme.table("药材", "编号", "库存变化", "入库占比", "基准完成率", "库存状态", "数据稳定度");
     private final Map<String, JButton> periodButtons = new LinkedHashMap<>();
 
     private final TrendCanvas trend = new TrendCanvas();
@@ -71,7 +72,7 @@ public final class HerbChartPanel extends JPanel {
         root.setOpaque(false);
         JPanel title = Theme.stack(4);
         title.add(Theme.label("药材数据分析仪表盘", 24, Theme.GREEN));
-        title.add(Theme.label("库存变化、基准完成率与多种药材对比", 13, Theme.MUTED));
+        title.add(Theme.label("库存变化、基准完成率与药材结构分析", 13, Theme.MUTED));
         root.add(title, BorderLayout.WEST);
         JPanel controls = Theme.row();
         controls.add(Theme.label("周期", 12, Theme.MUTED));
@@ -94,9 +95,9 @@ public final class HerbChartPanel extends JPanel {
         cards.setAlignmentX(LEFT_ALIGNMENT);
         body.add(cards);
         body.add(Box.createVerticalStrut(18));
-        body.add(chartCard("各药材不同周期库存变化对比", "将库存流水按日线、周线、月线聚合，正数表示入库增加，负数表示出库减少", trend));
+        body.add(chartCard("库存结余趋势", "按日线、周线、月线查看药材库存结余变化；正数表示入库，负数表示出库", trend));
         body.add(Box.createVerticalStrut(16));
-        body.add(chartCard("各药材库存基准完成率", "当前库存 / 药材预警基准 × 100%，颜色表示是否达到基准", prediction));
+        body.add(chartCard("库存基准完成率", "当前库存 / 药材基准 × 100%，绿色表示达到基准，金色表示需要补货", prediction));
         body.add(Box.createVerticalStrut(16));
         Theme.ResponsiveGrid distributions = Theme.responsiveGrid(2, 2, 1, 14, 14);
         distributions.setAlignmentX(LEFT_ALIGNMENT);
@@ -134,7 +135,7 @@ public final class HerbChartPanel extends JPanel {
         head.setOpaque(false);
         JPanel text = Theme.stack(3);
         text.add(Theme.label("药材对比", 19, Theme.GREEN));
-        text.add(Theme.label("对应参考项目的自选股区域，最多选择 5 种药材", 12, Theme.MUTED));
+        text.add(Theme.label("选择重点药材，查看库存变化与基准完成率，最多选择 5 种", 12, Theme.MUTED));
         head.add(text, BorderLayout.WEST);
         JPanel buttons = Theme.row();
         for (String p : new String[]{DAILY, WEEKLY, MONTHLY}) {
@@ -156,10 +157,10 @@ public final class HerbChartPanel extends JPanel {
         side.setBorder(new EmptyBorder(14, 14, 14, 14));
         side.add(search, BorderLayout.NORTH);
         JPanel actions = Theme.row();
-        JButton suggested = Theme.button("一键加入推荐", true);
+        JButton suggested = Theme.button("加入重点药材", true);
         JButton clear = Theme.button("清空", false);
-        suggested.addActionListener(e -> { favorites.clear(); summaries().stream().sorted(Comparator.comparingDouble(Summary::prediction).reversed()).limit(3).forEach(s -> favorites.add(s.key())); refresh(); });
-        clear.addActionListener(e -> { favorites.clear(); refresh(); });
+        suggested.addActionListener(e -> { selectedHerbs.clear(); summaries().stream().sorted(Comparator.comparingDouble(Summary::prediction).reversed()).limit(3).forEach(s -> selectedHerbs.add(s.key())); refresh(); });
+        clear.addActionListener(e -> { selectedHerbs.clear(); refresh(); });
         actions.add(suggested); actions.add(clear);
         side.add(actions, BorderLayout.SOUTH);
         picker.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
@@ -176,8 +177,8 @@ public final class HerbChartPanel extends JPanel {
             row.add(left, BorderLayout.WEST);
             Summary s = summary(value);
             JPanel right = Theme.stack(2);
-            right.add(Theme.label(favorites.contains(key(value)) ? "已加入" : s.status(), 11, favorites.contains(key(value)) ? Theme.GREEN : Theme.ACCENT));
-            right.add(Theme.label(String.format(Locale.ROOT, "预测 %.1f%%", s.prediction()), 10, Theme.MUTED));
+            right.add(Theme.label(selectedHerbs.contains(key(value)) ? "已加入" : s.status(), 11, selectedHerbs.contains(key(value)) ? Theme.GREEN : Theme.ACCENT));
+            right.add(Theme.label(String.format(Locale.ROOT, "基准 %.1f%%", s.prediction()), 10, Theme.MUTED));
             row.add(right, BorderLayout.EAST);
             return row;
         });
@@ -186,8 +187,8 @@ public final class HerbChartPanel extends JPanel {
                 int i = picker.locationToIndex(e.getPoint());
                 if (i < 0) return;
                 Medicinal m = pickerModel.get(i);
-                if (favorites.contains(key(m))) favorites.remove(key(m));
-                else if (favorites.size() < MAX_FAVORITES) favorites.add(key(m));
+                if (selectedHerbs.contains(key(m))) selectedHerbs.remove(key(m));
+                else if (selectedHerbs.size() < MAX_FAVORITES) selectedHerbs.add(key(m));
                 refresh();
             }
         });
@@ -225,8 +226,10 @@ public final class HerbChartPanel extends JPanel {
     public void setData(List<Medicinal> value, List<Object[]> rows) {
         herbs = value == null ? List.of() : List.copyOf(value);
         events = parse(rows);
-        if (favorites.isEmpty()) herbs.stream().limit(3).forEach(m -> favorites.add(key(m)));
-        favorites.removeIf(k -> herbs.stream().noneMatch(m -> key(m).equals(k)));
+        demoEvents = events.isEmpty() && !herbs.isEmpty();
+        if (demoEvents) events = demoEvents(herbs);
+        if (selectedHerbs.isEmpty()) herbs.stream().limit(3).forEach(m -> selectedHerbs.add(key(m)));
+        selectedHerbs.removeIf(k -> herbs.stream().noneMatch(m -> key(m).equals(k)));
         refresh();
     }
 
@@ -254,7 +257,7 @@ public final class HerbChartPanel extends JPanel {
         cards.add(metric("药材池", String.valueOf(all.size()), "当前在册药材"));
         cards.add(metric(activePeriod + "达标", String.valueOf(recommended), "库存达到基准"));
         cards.add(metric("高信心", String.valueOf(high), "有足够流水记录"));
-        cards.add(metric("自选药材", favorites.size() + "/" + MAX_FAVORITES, "底部对比区域"));
+        cards.add(metric("重点药材", selectedHerbs.size() + "/" + MAX_FAVORITES, "底部重点分析"));
         cards.revalidate(); cards.repaint();
     }
 
@@ -274,11 +277,11 @@ public final class HerbChartPanel extends JPanel {
 
     private void refreshTags() {
         favoriteTags.removeAll();
-        for (Medicinal m : herbs) if (favorites.contains(key(m))) {
+        for (Medicinal m : herbs) if (selectedHerbs.contains(key(m))) {
             JButton tag = Theme.button(m.name() + "  ×", false);
-            tag.addActionListener(e -> { favorites.remove(key(m)); refresh(); }); favoriteTags.add(tag);
+            tag.addActionListener(e -> { selectedHerbs.remove(key(m)); refresh(); }); favoriteTags.add(tag);
         }
-        if (favorites.isEmpty()) favoriteTags.add(Theme.label("当前还没有加入对比的药材。", 12, Theme.MUTED));
+        if (selectedHerbs.isEmpty()) favoriteTags.add(Theme.label("当前还没有选择重点药材。", 12, Theme.MUTED));
         favoriteTags.revalidate(); favoriteTags.repaint();
     }
 
@@ -299,8 +302,26 @@ public final class HerbChartPanel extends JPanel {
         result.sort(Comparator.comparing(Event::time)); return result;
     }
 
+    /** 无权限或空库时只生成内存演示序列，不写入 stock_log，也不改变库存。 */
+    private List<Event> demoEvents(List<Medicinal> source) {
+        List<Event> result = new ArrayList<>();
+        LocalDateTime start = LocalDateTime.now().minusDays(35);
+        for (int herbIndex = 0; herbIndex < source.size(); herbIndex++) {
+            Medicinal m = source.get(herbIndex);
+            int balance = Math.max(1, m.stock());
+            for (int day = 0; day < 35; day++) {
+                int delta = ((day + herbIndex * 2) % 6 == 0 ? 9 : 0)
+                        - ((day + herbIndex) % 5 == 0 ? 4 : 0)
+                        + ((day * 3 + herbIndex) % 7 == 0 ? 2 : 0);
+                balance = Math.max(1, balance + delta);
+                result.add(new Event(m.code(), m.name(), delta, balance, start.plusDays(day)));
+            }
+        }
+        return result;
+    }
+
     private List<Summary> summaries() { return herbs.stream().map(this::summary).sorted(Comparator.comparingDouble(Summary::prediction).reversed()).toList(); }
-    private List<Summary> favoriteSummaries() { return summaries().stream().filter(s -> favorites.contains(s.key())).toList(); }
+    private List<Summary> favoriteSummaries() { return summaries().stream().filter(s -> selectedHerbs.contains(s.key())).toList(); }
     private Summary summary(Medicinal m) {
         List<Event> e = periodEvents(m.name());
         int positive = (int) e.stream().filter(x -> x.delta() > 0).count();
@@ -336,7 +357,8 @@ public final class HerbChartPanel extends JPanel {
 
     private abstract class Chart extends JPanel {
         private int hover = -1;
-        Chart(int h) { setOpaque(false); setPreferredSize(new Dimension(980, h)); setToolTipText("");
+        private final int chartHeight;
+        Chart(int h) { chartHeight = h; setOpaque(false); setPreferredSize(new Dimension(900, h)); setMinimumSize(new Dimension(0, h)); setToolTipText("");
             addMouseMotionListener(new MouseMotionAdapter() { public void mouseMoved(MouseEvent e) { int n = hit(e.getX()); if (n != hover) { hover = n; repaint(); } } });
             addMouseListener(new MouseAdapter() { public void mouseExited(MouseEvent e) { hover = -1; repaint(); } }); }
         int hover() { return hover; }
